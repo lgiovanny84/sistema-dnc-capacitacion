@@ -1055,14 +1055,22 @@ function Admin({
         email: email.trim(),
         fullName: fullName.trim(),
         role: newRole,
-        redirectTo: window.location.origin,
       },
     });
     setSending(false);
     if (error || data?.error) {
-      setMsg(
-        `No se pudo crear la invitación: ${data?.error || error?.message}`,
-      );
+      let detail = data?.error || error?.message || "Error no identificado.";
+      const context = (error as (Error & { context?: Response }) | null)
+        ?.context;
+      if (context) {
+        try {
+          const body = await context.clone().json();
+          if (body?.error) detail = body.error;
+        } catch {
+          // Conserva el mensaje general cuando la respuesta no es JSON.
+        }
+      }
+      setMsg(`No se pudo crear la invitación: ${detail}`);
     } else {
       setMsg("Invitación enviada correctamente.");
       setEmail("");
