@@ -19,5 +19,11 @@ create policy need_read on public.training_needs for select to authenticated usi
 create policy need_insert on public.training_needs for insert to authenticated with check(owner_id=auth.uid());
 create policy need_owner_update on public.training_needs for update to authenticated using(owner_id=auth.uid() or public.is_admin()) with check(owner_id=auth.uid() or public.is_admin());
 create policy audit_admin_read on public.audit_log for select to authenticated using(public.is_admin());
+grant usage on schema public to authenticated;
+grant select on public.profiles, public.catalogs, public.training_needs, public.audit_log to authenticated;
+grant insert, update on public.training_needs to authenticated;
+grant insert, update on public.catalogs to authenticated;
+grant update on public.profiles to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
 insert into public.catalogs(kind,name) values('factor','Cumplimiento normativo'),('factor','Competencias técnicas'),('factor','Competencias blandas'),('factor','Buenas prácticas y pasantías'),('occupational_group','Directivo'),('occupational_group','Jefatura'),('occupational_group','Operativo'),('modality','Presencial'),('modality','Virtual'),('modality','Híbrida') on conflict do nothing;
 -- update public.profiles set role='admin' where email='correo@institucion.com';
