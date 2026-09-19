@@ -44,6 +44,7 @@ type Profile = {
   department: string | null;
   onboarding_completed_at: string | null;
   can_view_entire_area: boolean;
+  profile_updated_at: string;
 };
 type OrgUnit = {
   id: string;
@@ -1344,6 +1345,7 @@ function Admin({
     [email, setEmail] = useState(""),
     [fullName, setFullName] = useState(""),
     [newRole, setNewRole] = useState<Role>("user"),
+    [editingUser, setEditingUser] = useState<Profile | null>(null),
     [sending, setSending] = useState(false);
   useEffect(() => {
     void loadUsers();
@@ -1434,6 +1436,18 @@ function Admin({
   return (
     <>
       <AdminNeeds needs={needs} reload={reload} />
+      {editingUser && (
+        <AdminUserEditor
+          user={editingUser}
+          catalogs={catalogs}
+          orgUnits={orgUnits}
+          onCancel={() => setEditingUser(null)}
+          onSaved={async () => {
+            await loadUsers();
+            setEditingUser(null);
+          }}
+        />
+      )}
       <div className="panel">
         <h2>Usuarios y accesos</h2>
         <p>
@@ -1476,6 +1490,7 @@ function Admin({
                 <th>Alcance visible</th>
                 <th>Perfil completado</th>
                 <th>Fecha de creación</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -1525,6 +1540,11 @@ function Admin({
                   </td>
                   <td>{user.onboarding_completed_at ? new Date(user.onboarding_completed_at).toLocaleString("es-EC") : "Pendiente"}</td>
                   <td>{new Date(user.created_at).toLocaleString("es-EC")}</td>
+                  <td>
+                    <button className="secondary" onClick={() => setEditingUser(user)}>
+                      Editar perfil
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1585,6 +1605,114 @@ function Admin({
         </div>
       </div>
     </>
+  );
+}
+
+function AdminUserEditor({
+  user,
+  catalogs,
+  orgUnits,
+  onCancel,
+  onSaved,
+}: {
+  user: Profile;
+  catalogs: Catalog[];
+  orgUnits: OrgUnit[];
+  onCancel: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const currentUnit = orgUnits.find(
+    (o) =>
+      o.group_name === user.occupational_group &&
+      o.area_name === user.area &&
+      o.department_name === user.department,
+  );
+  const [fullName, setFullName] = useState(user.full_name ?? ""),
+    [position, setPosition] = useState(user.position ?? ""),
+    [unitId, setUnitId] = useState(currentUnit?.id ?? ""),
+    [editRole, setEditRole] = useState<Role>(user.role),
+    [active, setActive] = useState(user.active),
+    [areaAccess, setAreaAccess] = useState(user.can_view_entire_area),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState("");
+  const selectedUnit = orgUnits.find((o) => o.id === unitId);
+  const positions = catalogs
+    .filter((c) => c.kind === "position" && c.active)
+    .map((c) => c.name);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!selectedUnit) {
+      setError("Seleccione un departamento válido.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const { error: updateError } = await supabase!
+      .from("profiles")
+      .update({
+        full_name: fullName.trim(),
+        position: position.trim(),
+        occupational_group: selectedUnit.group_name,
+        area: selectedUnit.area_name,
+        department: selectedUnit.department_name,
+        role: editRole,
+        active,
+        can_view_entire_area: editRole === "admin" ? false : areaAccess,
+        onboarding_completed_at:
+          user.onboarding_completed_at ?? new Date().toISOString(),
+        profile_updated_at: new Date().toISOString(),
+      })
+      .eq("id", user.id);
+    setSaving(false);
+    if (updateError) setError(updateError.message);
+    else await onSaved();
+  }
+
+  return (
+    <form className="panel form admin-user-editor" onSubmit={submit}>
+      <div className="panelhead">
+        <div>
+          <h2>Actualizar información del usuario</h2>
+          <p>{user.email}</p>
+        </div>
+        <button type="button" className="secondary" onClick={onCancel}>
+          Cerrar
+        </button>
+      </div>
+      <div className="fields">
+        <Input label="Nombre completo" value={fullName} onChange={setFullName} required />
+        <Input label="Cargo" value={position} onChange={setPosition} list={positions} required />
+        <label>
+          Departamento
+          <select value={unitId} onChange={(e) => setUnitId(e.target.value)} required>
+            <option value="">Seleccione…</option>
+            {orgUnits.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.department_name} — {unit.area_name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Input label="Grupo ocupacional" value={selectedUnit?.group_name ?? ""} onChange={() => {}} disabled />
+        <Input label="Área" value={selectedUnit?.area_name ?? ""} onChange={() => {}} disabled />
+        <Select label="Rol" value={editRole} values={["user", "admin"]} onChange={(value) => setEditRole(value as Role)} required />
+        <Select label="Estado" value={active ? "Activo" : "Inactivo"} values={["Activo", "Inactivo"]} onChange={(value) => setActive(value === "Activo")} required />
+        <Select
+          label="Información visible"
+          value={editRole === "admin" ? "Toda la organización" : areaAccess ? "Toda su área" : "Solo su departamento"}
+          values={editRole === "admin" ? ["Toda la organización"] : ["Solo su departamento", "Toda su área"]}
+          onChange={(value) => setAreaAccess(value === "Toda su área")}
+          disabled={editRole === "admin"}
+          required
+        />
+      </div>
+      {error && <div className="error">{error}</div>}
+      <div className="actions">
+        <button type="button" className="secondary" onClick={onCancel}>Cancelar</button>
+        <button className="primary" disabled={saving}>{saving ? "Guardando…" : "Guardar usuario"}</button>
+      </div>
+    </form>
   );
 }
 
