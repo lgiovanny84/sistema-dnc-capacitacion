@@ -38,21 +38,21 @@ aside {
 }
 .brand {
   display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 38px;
-}
-.brand > span,
-.logo {
-  background: #d7a640;
-  color: #10233f;
-  font-weight: 900;
-  padding: 12px;
-  border-radius: 12px;
-}
-.brand div {
-  display: flex;
   flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 38px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.brand img {
+  width: 100%;
+  max-height: 62px;
+  object-fit: contain;
+  object-position: left center;
 }
 .brand small {
   color: #9fb0c8;
@@ -359,6 +359,59 @@ button.secondary,
   opacity: 0.5;
   text-decoration: line-through;
 }
+.catalog-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px;
+  border: 1px solid #e1e6ed;
+  border-radius: 20px;
+}
+.mini-action {
+  border: 0;
+  background: transparent;
+  color: #183b66;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 5px;
+}
+.danger {
+  color: #9d2525 !important;
+}
+.admin-needs input {
+  width: 100%;
+  min-width: 140px;
+  border: 1px solid #cdd5df;
+  border-radius: 7px;
+  padding: 8px;
+}
+.row-actions {
+  display: flex;
+  gap: 7px;
+}
+.row-actions button {
+  white-space: nowrap;
+  padding: 8px 10px;
+}
+.report-heading {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  background: #fff;
+  border: 1px solid #e1e6ed;
+  border-radius: 13px;
+  padding: 14px 22px;
+  margin-bottom: 18px;
+}
+.report-heading h2 {
+  margin: 0 0 5px;
+}
+.report-logo {
+  width: 4cm;
+  height: 2cm;
+  object-fit: contain;
+  object-position: left center;
+}
 .alert,
 .error {
   padding: 11px 13px;
@@ -396,6 +449,22 @@ button.secondary,
 }
 .login .logo {
   width: max-content;
+}
+.login-logo {
+  display: block;
+  width: min(240px, 100%);
+  max-height: 110px;
+  object-fit: contain;
+  object-position: left center;
+}
+.loading-card {
+  text-align: center;
+}
+.loading-card .login-logo {
+  margin: auto;
+}
+.profile-setup {
+  width: min(720px, 100%);
 }
 .login h1,
 .login p {
@@ -532,5 +601,14 @@ footer {
   }
   .grid2 {
     grid-template-columns: 1fr 1fr;
+  }
+  .report-heading {
+    display: flex !important;
+    border: 0;
+    padding: 0 0 12px;
+  }
+  .report-logo {
+    width: 4cm;
+    height: 2cm;
   }
 }

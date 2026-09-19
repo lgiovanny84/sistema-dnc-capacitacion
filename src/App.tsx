@@ -5,6 +5,7 @@ type Role = "admin" | "user";
 type Need = {
   id: string;
   created_at: string;
+  updated_at: string;
   owner_id: string;
   status: string;
   type: string;
@@ -15,6 +16,7 @@ type Need = {
   occupational_group: string;
   area: string;
   department: string;
+  position: string;
   participants: number;
   hours: number;
   goal: string;
@@ -36,10 +38,24 @@ type Profile = {
   role: Role;
   active: boolean;
   created_at: string;
+  position: string | null;
+  occupational_group: string | null;
+  area: string | null;
+  department: string | null;
+  onboarding_completed_at: string | null;
+};
+type OrgUnit = {
+  id: string;
+  group_name: string;
+  area_name: string;
+  department_name: string;
+  active: boolean;
+  created_at: string;
 };
 const kinds: Record<string, string> = {
   factor: "Factores",
   competency: "Competencias",
+  position: "Cargos",
   occupational_group: "Grupos ocupacionales",
   area: "Áreas",
   department: "Departamentos",
@@ -68,6 +84,7 @@ const blank = {
   competency: "",
   gap: "",
   objective: "",
+  position: "",
   occupational_group: "",
   area: "",
   department: "",
@@ -91,6 +108,8 @@ export default function App() {
     [tab, setTab] = useState("dashboard"),
     [needs, setNeeds] = useState<Need[]>([]),
     [catalogs, setCatalogs] = useState<Catalog[]>(fallback),
+    [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]),
+    [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
     [notice, setNotice] = useState(""),
     [recovery, setRecovery] = useState(false),
@@ -121,6 +140,7 @@ export default function App() {
       { data: n, error: ne },
       { data: c, error: ce },
       { data: p, error: pe },
+      { data: o, error: oe },
     ] = await Promise.all([
       supabase!
         .from("training_needs")
@@ -129,11 +149,18 @@ export default function App() {
       supabase!.from("catalogs").select("*").order("name"),
       supabase!
         .from("profiles")
-        .select("role")
+        .select("*")
         .eq("id", session!.user.id)
         .single(),
+      supabase!
+        .from("organizational_structure")
+        .select("*")
+        .eq("active", true)
+        .order("group_name")
+        .order("area_name")
+        .order("department_name"),
     ]);
-    const firstError = ne || ce || pe;
+    const firstError = ne || ce || pe || oe;
     setNotice(
       firstError
         ? `No fue posible cargar los datos: ${firstError.message}`
@@ -142,12 +169,24 @@ export default function App() {
     setNeeds((n ?? []) as Need[]);
     setCatalogs(c?.length ? (c as Catalog[]) : fallback);
     setRole((p?.role as Role) || "user");
+    setProfile((p as Profile) ?? null);
+    setOrgUnits((o ?? []) as OrgUnit[]);
     setLoading(false);
   }
   if (!configured) return <Setup />;
   if (recovery && session)
     return <UpdatePassword onDone={() => setRecovery(false)} />;
   if (!session) return <Login />;
+  if (loading) return <Loading />;
+  if (profile && !profile.onboarding_completed_at)
+    return (
+      <ProfileSetup
+        profile={profile}
+        catalogs={catalogs}
+        orgUnits={orgUnits}
+        onDone={load}
+      />
+    );
   const visible = needs.filter(
     (n) =>
       (!filters.type || n.type === filters.type) &&
@@ -160,15 +199,22 @@ export default function App() {
       0,
     ),
     budget = visible.reduce((s, n) => s + Number(n.estimated_cost), 0);
-  const options = (kind: string) =>
-    catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
+  const options = (kind: string) => {
+    if (kind === "area") return unique(orgUnits.map((o) => o.area_name));
+    if (kind === "occupational_group")
+      return unique(orgUnits.map((o) => o.group_name));
+    return catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
+  };
   function exportCSV() {
     const cols = [
+      "created_at",
+      "updated_at",
       "type",
       "factor",
       "competency",
       "gap",
       "objective",
+      "position",
       "occupational_group",
       "area",
       "department",
@@ -203,13 +249,10 @@ export default function App() {
   return (
     <div className="shell">
       <aside>
-        <div className="brand">
-          <span>TH</span>
-          <div>
-            <b>Sistema DNC</b>
-            <small>Talento Humano</small>
-          </div>
-        </div>
+        <button className="brand" onClick={() => setTab("dashboard")} aria-label="Ir al inicio">
+          <img src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
+          <small>Sistema DNC · Talento Humano</small>
+        </button>
         <nav>
           {[
             ["dashboard", "Resumen"],
@@ -266,6 +309,8 @@ export default function App() {
         ) : tab === "new" ? (
           <NeedForm
             catalogs={catalogs}
+            orgUnits={orgUnits}
+            profile={profile}
             onDone={() => {
               void load();
               setTab("list");
@@ -285,7 +330,7 @@ export default function App() {
             exportCSV={exportCSV}
           />
         ) : (
-          <Admin catalogs={catalogs} reload={load} />
+          <Admin catalogs={catalogs} orgUnits={orgUnits} needs={needs} reload={load} />
         )}
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
@@ -299,7 +344,7 @@ function Setup() {
   return (
     <div className="center">
       <div className="login wide">
-        <div className="logo">DNC</div>
+        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
         <h1>Configuración requerida</h1>
         <p>Configure Supabase para activar autenticación y datos protegidos.</p>
         <ol>
@@ -314,6 +359,16 @@ function Setup() {
             Ejecute <code>npm run dev</code>.
           </li>
         </ol>
+      </div>
+    </div>
+  );
+}
+function Loading() {
+  return (
+    <div className="center">
+      <div className="login loading-card">
+        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
+        <p>Cargando información segura…</p>
       </div>
     </div>
   );
@@ -349,7 +404,7 @@ function Login() {
   return (
     <div className="center">
       <form className="login" onSubmit={forgot ? reset : submit}>
-        <div className="logo">DNC</div>
+        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
         <h1>{forgot ? "Recuperar contraseña" : "Ingreso seguro"}</h1>
         <p>
           {forgot
@@ -420,7 +475,7 @@ function UpdatePassword({ onDone }: { onDone: () => void }) {
   return (
     <div className="center">
       <form className="login" onSubmit={submit}>
-        <div className="logo">DNC</div>
+        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
         <h1>Nueva contraseña</h1>
         <p>Defina una contraseña segura de al menos 8 caracteres.</p>
         <label>
@@ -447,6 +502,94 @@ function UpdatePassword({ onDone }: { onDone: () => void }) {
         <button className="primary" disabled={busy}>
           {busy ? "Guardando…" : "Guardar contraseña"}
         </button>
+      </form>
+    </div>
+  );
+}
+function unique(values: string[]) {
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b, "es"));
+}
+function ProfileSetup({
+  profile,
+  catalogs,
+  orgUnits,
+  onDone,
+}: {
+  profile: Profile;
+  catalogs: Catalog[];
+  orgUnits: OrgUnit[];
+  onDone: () => Promise<void>;
+}) {
+  const [position, setPosition] = useState(profile.position ?? ""),
+    [group, setGroup] = useState(profile.occupational_group ?? ""),
+    [area, setArea] = useState(profile.area ?? ""),
+    [department, setDepartment] = useState(profile.department ?? ""),
+    [saving, setSaving] = useState(false),
+    [error, setError] = useState("");
+  const groups = unique(orgUnits.map((o) => o.group_name));
+  const areas = unique(
+    orgUnits.filter((o) => o.group_name === group).map((o) => o.area_name),
+  );
+  const departments = unique(
+    orgUnits
+      .filter((o) => o.group_name === group && o.area_name === area)
+      .map((o) => o.department_name),
+  );
+  const positions = catalogs
+    .filter((c) => c.kind === "position" && c.active)
+    .map((c) => c.name);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    const { error: rpcError } = await supabase!.rpc("complete_own_profile", {
+      p_position: position.trim(),
+      p_group: group,
+      p_area: area,
+      p_department: department,
+    });
+    setSaving(false);
+    if (rpcError) setError(rpcError.message);
+    else await onDone();
+  }
+  return (
+    <div className="center">
+      <form className="login profile-setup" onSubmit={submit}>
+        <img className="login-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
+        <div>
+          <h1>Complete su perfil</h1>
+          <p>Este registro se solicita una sola vez y permite mostrar únicamente su estructura organizacional.</p>
+        </div>
+        <div className="fields">
+          <Input label="Cargo" value={position} onChange={setPosition} list={positions} required />
+          <Select
+            label="Grupo ocupacional"
+            value={group}
+            values={groups}
+            onChange={(value) => {
+              setGroup(value);
+              setArea("");
+              setDepartment("");
+            }}
+            required
+          />
+          <Select
+            label="Área"
+            value={area}
+            values={areas}
+            onChange={(value) => {
+              setArea(value);
+              setDepartment("");
+            }}
+            required
+          />
+          <Select label="Departamento" value={department} values={departments} onChange={setDepartment} required />
+        </div>
+        {error && <div className="error">{error}</div>}
+        <button className="primary" disabled={saving}>
+          {saving ? "Guardando…" : "Guardar y continuar"}
+        </button>
+        <small>La fecha y hora de este registro quedarán guardadas para trazabilidad.</small>
       </form>
     </div>
   );
@@ -558,9 +701,12 @@ function MiniTable({ needs }: { needs: Need[] }) {
             <th>Competencia</th>
             <th>Factor</th>
             <th>Área</th>
+            <th>Departamento</th>
+            <th>Cargo</th>
             <th>Tipo</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th>Fecha y hora de registro</th>
           </tr>
         </thead>
         <tbody>
@@ -571,6 +717,8 @@ function MiniTable({ needs }: { needs: Need[] }) {
               </td>
               <td>{n.factor}</td>
               <td>{n.area}</td>
+              <td>{n.department}</td>
+              <td>{n.position || "—"}</td>
               <td>{n.type}</td>
               <td>
                 <span className={`pill ${n.priority.toLowerCase()}`}>
@@ -578,6 +726,7 @@ function MiniTable({ needs }: { needs: Need[] }) {
                 </span>
               </td>
               <td>{n.status}</td>
+              <td>{new Date(n.created_at).toLocaleString("es-EC")}</td>
             </tr>
           ))}
         </tbody>
@@ -587,19 +736,51 @@ function MiniTable({ needs }: { needs: Need[] }) {
 }
 function NeedForm({
   catalogs,
+  orgUnits,
+  profile,
   onDone,
   userId,
 }: {
   catalogs: Catalog[];
+  orgUnits: OrgUnit[];
+  profile: Profile | null;
   onDone: () => void;
   userId: string;
 }) {
-  const [f, setF] = useState(blank),
+  const [f, setF] = useState({
+      ...blank,
+      position: profile?.position ?? "",
+      occupational_group: profile?.occupational_group ?? "",
+      area: profile?.area ?? "",
+      department: profile?.department ?? "",
+    }),
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   const opts = (k: string) =>
       catalogs.filter((c) => c.kind === k && c.active).map((c) => c.name),
     set = (k: string, v: string | number) => setF((x) => ({ ...x, [k]: v }));
+  const groups = unique(orgUnits.map((o) => o.group_name));
+  const areas = unique(
+    orgUnits
+      .filter((o) => o.group_name === f.occupational_group)
+      .map((o) => o.area_name),
+  );
+  const departments = unique(
+    orgUnits
+      .filter(
+        (o) =>
+          o.group_name === f.occupational_group && o.area_name === f.area,
+      )
+      .map((o) => o.department_name),
+  );
+  function setDate(value: string) {
+    const month = value ? Number(value.slice(5, 7)) : 0;
+    setF((x) => ({
+      ...x,
+      planned_date: value,
+      quarter: month ? `Q${Math.ceil(month / 3)}` : x.quarter,
+    }));
+  }
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (f.type === "Interna" && !f.planned_date) {
@@ -660,24 +841,40 @@ function NeedForm({
           onChange={(v) => set("objective", v)}
           required
         />
+        <Input
+          label="Cargo beneficiario"
+          value={f.position}
+          list={opts("position")}
+          onChange={(v) => set("position", v)}
+          required
+        />
         <Select
           label="Grupo ocupacional"
           value={f.occupational_group}
-          values={opts("occupational_group")}
-          onChange={(v) => set("occupational_group", v)}
+          values={groups}
+          onChange={(v) =>
+            setF((x) => ({
+              ...x,
+              occupational_group: v,
+              area: "",
+              department: "",
+            }))
+          }
           required
         />
         <Select
           label="Área"
           value={f.area}
-          values={opts("area")}
-          onChange={(v) => set("area", v)}
+          values={areas}
+          onChange={(v) =>
+            setF((x) => ({ ...x, area: v, department: "" }))
+          }
           required
         />
         <Select
           label="Departamento"
           value={f.department}
-          values={opts("department")}
+          values={departments}
           onChange={(v) => set("department", v)}
           required
         />
@@ -721,20 +918,19 @@ function NeedForm({
           values={["Baja", "Media", "Alta", "Crítica"]}
           onChange={(v) => set("priority", v)}
         />
-        {f.type === "Interna" && (
-          <Input
-            label="Fecha planificada"
-            type="date"
-            value={f.planned_date}
-            onChange={(v) => set("planned_date", v)}
-            required
-          />
-        )}
+        <Input
+          label={`Fecha planificada${f.type === "Interna" ? " (obligatoria)" : ""}`}
+          type="date"
+          value={f.planned_date}
+          onChange={setDate}
+          required={f.type === "Interna"}
+        />
         <Select
           label="Trimestre"
           value={f.quarter}
           values={["Q1", "Q2", "Q3", "Q4"]}
           onChange={(v) => set("quarter", v)}
+          disabled={Boolean(f.planned_date)}
         />
         <Select
           label="Modalidad"
@@ -771,7 +967,19 @@ function NeedForm({
       </div>
       {error && <div className="error">{error}</div>}
       <div className="actions">
-        <button type="button" className="secondary" onClick={() => setF(blank)}>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() =>
+            setF({
+              ...blank,
+              position: profile?.position ?? "",
+              occupational_group: profile?.occupational_group ?? "",
+              area: profile?.area ?? "",
+              department: profile?.department ?? "",
+            })
+          }
+        >
           Limpiar
         </button>
         <button className="primary" disabled={saving}>
@@ -829,12 +1037,14 @@ function Select({
   values,
   onChange,
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
   values: string[];
   onChange: (v: string) => void;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <label>
@@ -843,6 +1053,7 @@ function Select({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
+        disabled={disabled}
       >
         <option value="">Seleccione…</option>
         {values.map((x) => (
@@ -923,6 +1134,13 @@ function Reports({
     setFilters((x: any) => ({ ...x, [k]: v }));
   return (
     <>
+      <div className="report-heading">
+        <img className="report-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
+        <div>
+          <h2>Reporte de necesidades de capacitación</h2>
+          <small>Generado: {new Date().toLocaleString("es-EC")}</small>
+        </div>
+      </div>
       <div className="panel filters">
         <Select
           label="Tipo"
@@ -1004,9 +1222,13 @@ function Reports({
 }
 function Admin({
   catalogs,
+  orgUnits,
+  needs,
   reload,
 }: {
   catalogs: Catalog[];
+  orgUnits: OrgUnit[];
+  needs: Need[];
   reload: () => Promise<void>;
 }) {
   const [kind, setKind] = useState("factor"),
@@ -1046,6 +1268,22 @@ function Admin({
       .eq("id", c.id);
     if (error) setMsg(error.message);
     else await reload();
+  }
+  async function renameCatalog(c: Catalog) {
+    const value = window.prompt("Nuevo nombre", c.name)?.trim();
+    if (!value || value === c.name) return;
+    const { error } = await supabase!
+      .from("catalogs")
+      .update({ name: value })
+      .eq("id", c.id);
+    setMsg(error?.message ?? "Elemento actualizado.");
+    if (!error) await reload();
+  }
+  async function deleteCatalog(c: Catalog) {
+    if (!window.confirm(`¿Eliminar definitivamente “${c.name}”?`)) return;
+    const { error } = await supabase!.from("catalogs").delete().eq("id", c.id);
+    setMsg(error?.message ?? "Elemento eliminado.");
+    if (!error) await reload();
   }
   async function invite(e: FormEvent) {
     e.preventDefault();
@@ -1089,6 +1327,7 @@ function Admin({
   }
   return (
     <>
+      <AdminNeeds needs={needs} reload={reload} />
       <div className="panel">
         <h2>Usuarios y accesos</h2>
         <p>
@@ -1128,6 +1367,8 @@ function Admin({
                 <th>Correo</th>
                 <th>Rol</th>
                 <th>Estado</th>
+                <th>Perfil completado</th>
+                <th>Fecha de creación</th>
               </tr>
             </thead>
             <tbody>
@@ -1156,6 +1397,8 @@ function Admin({
                       {user.active ? "Activo" : "Inactivo"}
                     </button>
                   </td>
+                  <td>{user.onboarding_completed_at ? new Date(user.onboarding_completed_at).toLocaleString("es-EC") : "Pendiente"}</td>
+                  <td>{new Date(user.created_at).toLocaleString("es-EC")}</td>
                 </tr>
               ))}
             </tbody>
@@ -1193,18 +1436,84 @@ function Admin({
               {catalogs
                 .filter((c) => c.kind === k)
                 .map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => toggle(c)}
-                    className={c.active ? "tag" : "tag off"}
-                  >
-                    {c.name}
-                  </button>
+                  <span className="catalog-item" key={c.id}>
+                    <button onClick={() => toggle(c)} className={c.active ? "tag" : "tag off"}>
+                      {c.name}
+                    </button>
+                    <button className="mini-action" onClick={() => renameCatalog(c)}>Editar</button>
+                    <button className="mini-action danger" onClick={() => deleteCatalog(c)}>Eliminar</button>
+                  </span>
                 ))}
             </div>
           </div>
         ))}
       </div>
+      <div className="panel">
+        <h2>Estructura organizacional cargada</h2>
+        <p>{orgUnits.length} relaciones activas de grupo, área y departamento.</p>
+        <div className="table">
+          <table>
+            <thead><tr><th>Grupo</th><th>Área</th><th>Departamento</th><th>Fecha de carga</th></tr></thead>
+            <tbody>{orgUnits.map((o) => <tr key={o.id}><td>{o.group_name}</td><td>{o.area_name}</td><td>{o.department_name}</td><td>{new Date(o.created_at).toLocaleString("es-EC")}</td></tr>)}</tbody>
+          </table>
+        </div>
+      </div>
     </>
+  );
+}
+
+function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<void> }) {
+  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_date: string; quarter: string }>>({});
+  const draft = (n: Need) => drafts[n.id] ?? {
+    competency: n.competency,
+    estimated_cost: Number(n.estimated_cost),
+    planned_date: n.planned_date ?? "",
+    quarter: n.quarter,
+  };
+  function change(n: Need, values: Partial<ReturnType<typeof draft>>) {
+    setDrafts((all) => ({ ...all, [n.id]: { ...draft(n), ...values } }));
+  }
+  function changeDate(n: Need, value: string) {
+    const month = value ? Number(value.slice(5, 7)) : 0;
+    change(n, { planned_date: value, quarter: month ? `Q${Math.ceil(month / 3)}` : draft(n).quarter });
+  }
+  async function save(n: Need) {
+    const d = draft(n);
+    const { error } = await supabase!.from("training_needs").update({
+      competency: d.competency.trim(),
+      estimated_cost: d.estimated_cost,
+      planned_date: d.planned_date || null,
+      quarter: d.quarter,
+    }).eq("id", n.id);
+    if (error) window.alert(error.message);
+    else {
+      setDrafts((all) => { const next = { ...all }; delete next[n.id]; return next; });
+      await reload();
+    }
+  }
+  async function remove(n: Need) {
+    if (!window.confirm(`¿Eliminar la necesidad “${n.competency}”? Esta acción quedará auditada.`)) return;
+    const { error } = await supabase!.from("training_needs").delete().eq("id", n.id);
+    if (error) window.alert(error.message);
+    else await reload();
+  }
+  return (
+    <div className="panel">
+      <h2>Temas y presupuesto</h2>
+      <p>Edite el tema, la fecha y el presupuesto. El trimestre se calcula automáticamente.</p>
+      <div className="table admin-needs"><table>
+        <thead><tr><th>Tema / competencia</th><th>Fecha</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
+        <tbody>{needs.map((n) => {
+          const d = draft(n);
+          return <tr key={n.id}>
+            <td><input value={d.competency} onChange={(e) => change(n, { competency: e.target.value })} /></td>
+            <td><input type="date" value={d.planned_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
+            <td>{d.quarter}</td>
+            <td><input type="number" min="0" step="0.01" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: Number(e.target.value) })} /></td>
+            <td className="row-actions"><button className="primary" onClick={() => save(n)}>Guardar</button><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </div>
   );
 }
