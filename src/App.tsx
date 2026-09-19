@@ -54,6 +54,16 @@ type OrgUnit = {
   active: boolean;
   created_at: string;
 };
+type CorrectionRequest = {
+  id: string;
+  need_id: string;
+  requester_id: string;
+  requested_field: string;
+  explanation: string;
+  status: "Pendiente" | "Atendida" | "Rechazada";
+  created_at: string;
+  resolved_at: string | null;
+};
 const kinds: Record<string, string> = {
   factor: "Factores",
   competency: "Competencias",
@@ -698,10 +708,14 @@ function MiniTable({
   needs,
   onEdit,
   onDelete,
+  onRequest,
+  requestUserId,
 }: {
   needs: Need[];
   onEdit?: (need: Need) => void;
   onDelete?: (need: Need) => void;
+  onRequest?: (need: Need) => void;
+  requestUserId?: string;
 }) {
   return (
     <div className="table">
@@ -717,7 +731,7 @@ function MiniTable({
             <th>Prioridad</th>
             <th>Estado</th>
             <th>Fecha y hora de registro</th>
-            {(onEdit || onDelete) && <th>Acciones</th>}
+            {(onEdit || onDelete || onRequest) && <th>Acciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -738,7 +752,7 @@ function MiniTable({
               </td>
               <td>{n.status}</td>
               <td>{new Date(n.created_at).toLocaleString("es-EC")}</td>
-              {(onEdit || onDelete) && (
+              {(onEdit || onDelete || onRequest) && (
                 <td className="row-actions">
                   {onEdit && (
                     <button className="secondary" onClick={() => onEdit(n)}>
@@ -748,6 +762,11 @@ function MiniTable({
                   {onDelete && (
                     <button className="secondary danger" onClick={() => onDelete(n)}>
                       Eliminar
+                    </button>
+                  )}
+                  {onRequest && n.owner_id === requestUserId && (
+                    <button className="secondary" onClick={() => onRequest(n)}>
+                      Solicitar corrección
                     </button>
                   )}
                 </td>
@@ -1143,7 +1162,12 @@ function List({
   profile: Profile | null;
   userId: string;
 }) {
-  const [editing, setEditing] = useState<Need | null>(null);
+  const [editing, setEditing] = useState<Need | null>(null),
+    [requesting, setRequesting] = useState<Need | null>(null),
+    [requestedField, setRequestedField] = useState(""),
+    [explanation, setExplanation] = useState(""),
+    [requestMsg, setRequestMsg] = useState(""),
+    [sendingRequest, setSendingRequest] = useState(false);
   async function status(id: string, value: string) {
     await supabase!
       .from("training_needs")
@@ -1160,6 +1184,26 @@ function List({
       .eq("id", need.id);
     if (error) window.alert(error.message);
     else await reload();
+  }
+  async function sendCorrectionRequest(e: FormEvent) {
+    e.preventDefault();
+    if (!requesting || requesting.owner_id !== userId) return;
+    setSendingRequest(true);
+    setRequestMsg("");
+    const { error } = await supabase!.from("correction_requests").insert({
+      need_id: requesting.id,
+      requester_id: userId,
+      requested_field: requestedField,
+      explanation: explanation.trim(),
+    });
+    setSendingRequest(false);
+    if (error) setRequestMsg(error.message);
+    else {
+      setRequestMsg("Solicitud enviada al administrador.");
+      setRequesting(null);
+      setRequestedField("");
+      setExplanation("");
+    }
   }
   if (editing) {
     return (
@@ -1186,12 +1230,47 @@ function List({
       <div className="permission-note">
         {role === "admin"
           ? "Como administrador puede modificar o eliminar cualquier registro."
-          : "Puede modificar sus registros para corregir errores. Las modificaciones quedan auditadas."}
+          : "No puede modificar directamente una necesidad. Si detecta un error, envíe una solicitud breve al administrador."}
       </div>
+      {requestMsg && <div className={requestMsg.startsWith("Solicitud") ? "success" : "error"}>{requestMsg}</div>}
+      {requesting && role !== "admin" && (
+        <form className="correction-form" onSubmit={sendCorrectionRequest}>
+          <div>
+            <h3>Solicitar corrección</h3>
+            <p>{requesting.competency} · {requesting.department}</p>
+          </div>
+          <Select
+            label="Campo que necesita modificar"
+            value={requestedField}
+            values={["Tema o competencia", "Factor", "Cargo beneficiario", "Área o departamento", "Participantes u horas", "Fecha o trimestre", "Modalidad", "Presupuesto o proveedor", "Otro"]}
+            onChange={setRequestedField}
+            required
+          />
+          <label>
+            Explicación breve
+            <textarea
+              value={explanation}
+              onChange={(e) => setExplanation(e.target.value)}
+              minLength={10}
+              maxLength={300}
+              rows={3}
+              required
+              placeholder="Explique qué dato está incorrecto y cuál debería ser el valor correcto."
+            />
+            <small>{explanation.length}/300 caracteres</small>
+          </label>
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => setRequesting(null)}>Cancelar</button>
+            <button className="primary" disabled={sendingRequest}>{sendingRequest ? "Enviando…" : "Enviar al administrador"}</button>
+          </div>
+        </form>
+      )}
       <MiniTable
         needs={needs}
-        onEdit={setEditing}
+        onEdit={role === "admin" ? setEditing : undefined}
         onDelete={role === "admin" ? remove : undefined}
+        onRequest={role === "user" ? setRequesting : undefined}
+        requestUserId={userId}
       />
       {role === "admin" && (
         <div className="review">
@@ -1435,6 +1514,7 @@ function Admin({
   }
   return (
     <>
+      <CorrectionRequests needs={needs} users={users} />
       <AdminNeeds needs={needs} reload={reload} />
       {editingUser && (
         <AdminUserEditor
@@ -1605,6 +1685,80 @@ function Admin({
         </div>
       </div>
     </>
+  );
+}
+
+function CorrectionRequests({ needs, users }: { needs: Need[]; users: Profile[] }) {
+  const [requests, setRequests] = useState<CorrectionRequest[]>([]),
+    [message, setMessage] = useState("");
+  useEffect(() => {
+    void loadRequests();
+  }, []);
+  async function loadRequests() {
+    const { data, error } = await supabase!
+      .from("correction_requests")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) setMessage(error.message);
+    else setRequests((data ?? []) as CorrectionRequest[]);
+  }
+  async function resolveRequest(id: string, status: "Atendida" | "Rechazada") {
+    const { data: authData } = await supabase!.auth.getUser();
+    const { error } = await supabase!
+      .from("correction_requests")
+      .update({
+        status,
+        resolved_at: new Date().toISOString(),
+        resolved_by: authData.user?.id ?? null,
+      })
+      .eq("id", id);
+    if (error) setMessage(error.message);
+    else {
+      setMessage(`Solicitud marcada como ${status.toLowerCase()}.`);
+      await loadRequests();
+    }
+  }
+  return (
+    <div className="panel">
+      <div className="panelhead">
+        <div>
+          <h2>Solicitudes de corrección</h2>
+          <p>Revise el mensaje, modifique la necesidad desde la matriz y marque el resultado.</p>
+        </div>
+        <span>{requests.filter((r) => r.status === "Pendiente").length} pendientes</span>
+      </div>
+      {message && <div className="statusmsg">{message}</div>}
+      <div className="table correction-requests">
+        <table>
+          <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Tema</th><th>Área / Departamento</th><th>Campo</th><th>Explicación</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {requests.map((request) => {
+              const need = needs.find((n) => n.id === request.need_id);
+              const requester = users.find((u) => u.id === request.requester_id);
+              return (
+                <tr key={request.id}>
+                  <td>{new Date(request.created_at).toLocaleString("es-EC")}</td>
+                  <td>{requester?.full_name || requester?.email || "Usuario"}</td>
+                  <td>{need?.competency || "Registro no disponible"}</td>
+                  <td>{need ? `${need.area} / ${need.department}` : "—"}</td>
+                  <td>{request.requested_field}</td>
+                  <td className="request-explanation">{request.explanation}</td>
+                  <td>{request.status}</td>
+                  <td className="row-actions">
+                    {request.status === "Pendiente" && (
+                      <>
+                        <button className="primary" onClick={() => resolveRequest(request.id, "Atendida")}>Atendida</button>
+                        <button className="secondary danger" onClick={() => resolveRequest(request.id, "Rechazada")}>Rechazar</button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
