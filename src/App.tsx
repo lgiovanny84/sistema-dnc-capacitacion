@@ -318,7 +318,15 @@ export default function App() {
             userId={session.user.id}
           />
         ) : tab === "list" ? (
-          <List needs={visible} role={role} reload={load} />
+          <List
+            needs={visible}
+            role={role}
+            reload={load}
+            catalogs={catalogs}
+            orgUnits={orgUnits}
+            profile={profile}
+            userId={session.user.id}
+          />
         ) : tab === "reports" ? (
           <Reports
             needs={visible}
@@ -692,7 +700,15 @@ function Bars({ needs, field }: { needs: Need[]; field: keyof Need }) {
     </div>
   );
 }
-function MiniTable({ needs }: { needs: Need[] }) {
+function MiniTable({
+  needs,
+  onEdit,
+  onDelete,
+}: {
+  needs: Need[];
+  onEdit?: (need: Need) => void;
+  onDelete?: (need: Need) => void;
+}) {
   return (
     <div className="table">
       <table>
@@ -707,6 +723,7 @@ function MiniTable({ needs }: { needs: Need[] }) {
             <th>Prioridad</th>
             <th>Estado</th>
             <th>Fecha y hora de registro</th>
+            {(onEdit || onDelete) && <th>Acciones</th>}
           </tr>
         </thead>
         <tbody>
@@ -727,6 +744,20 @@ function MiniTable({ needs }: { needs: Need[] }) {
               </td>
               <td>{n.status}</td>
               <td>{new Date(n.created_at).toLocaleString("es-EC")}</td>
+              {(onEdit || onDelete) && (
+                <td className="row-actions">
+                  {onEdit && (
+                    <button className="secondary" onClick={() => onEdit(n)}>
+                      Modificar
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button className="secondary danger" onClick={() => onDelete(n)}>
+                      Eliminar
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -740,20 +771,49 @@ function NeedForm({
   profile,
   onDone,
   userId,
+  initialNeed,
+  onCancel,
 }: {
   catalogs: Catalog[];
   orgUnits: OrgUnit[];
   profile: Profile | null;
-  onDone: () => void;
+  onDone: () => void | Promise<void>;
   userId: string;
+  initialNeed?: Need;
+  onCancel?: () => void;
 }) {
-  const [f, setF] = useState({
-      ...blank,
-      position: profile?.position ?? "",
-      occupational_group: profile?.occupational_group ?? "",
-      area: profile?.area ?? "",
-      department: profile?.department ?? "",
-    }),
+  const initialForm = initialNeed
+    ? {
+        type: initialNeed.type,
+        factor: initialNeed.factor,
+        competency: initialNeed.competency,
+        gap: initialNeed.gap,
+        objective: initialNeed.objective,
+        position: initialNeed.position,
+        occupational_group: initialNeed.occupational_group,
+        area: initialNeed.area,
+        department: initialNeed.department,
+        participants: Number(initialNeed.participants),
+        hours: Number(initialNeed.hours),
+        goal: initialNeed.goal,
+        indicator: initialNeed.indicator,
+        evidence: initialNeed.evidence,
+        priority: initialNeed.priority,
+        planned_date: initialNeed.planned_date ?? "",
+        quarter: initialNeed.quarter,
+        modality: initialNeed.modality,
+        estimated_cost: Number(initialNeed.estimated_cost),
+        provider: initialNeed.provider,
+        observations: initialNeed.observations,
+      }
+    : {
+        ...blank,
+        position: profile?.position ?? "",
+        occupational_group: profile?.occupational_group ?? "",
+        area: profile?.area ?? "",
+        department: profile?.department ?? "",
+      };
+  const [f, setF] = useState(initialForm),
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   const opts = (k: string) =>
@@ -790,20 +850,25 @@ function NeedForm({
       return;
     }
     setSaving(true);
-    const { error } = await supabase!.from("training_needs").insert({
-      ...f,
-      owner_id: userId,
-      status: "Pendiente",
-      planned_date: f.planned_date || null,
-    });
+    const values = { ...f, planned_date: f.planned_date || null };
+    const { error } = initialNeed
+      ? await supabase!
+          .from("training_needs")
+          .update(values)
+          .eq("id", initialNeed.id)
+      : await supabase!.from("training_needs").insert({
+          ...values,
+          owner_id: userId,
+          status: "Pendiente",
+        });
     setSaving(false);
     if (error) setError(error.message);
-    else onDone();
+    else await onDone();
   }
   return (
     <form className="panel form" onSubmit={submit}>
       <div className="intro">
-        <h2>Necesidad basada en una brecha verificable</h2>
+        <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Necesidad basada en una brecha verificable"}</h2>
         <p>
           Vincule la brecha con una competencia, resultado esperado y evidencia.
         </p>
@@ -970,20 +1035,12 @@ function NeedForm({
         <button
           type="button"
           className="secondary"
-          onClick={() =>
-            setF({
-              ...blank,
-              position: profile?.position ?? "",
-              occupational_group: profile?.occupational_group ?? "",
-              area: profile?.area ?? "",
-              department: profile?.department ?? "",
-            })
-          }
+          onClick={() => (initialNeed && onCancel ? onCancel() : setF(initialForm))}
         >
-          Limpiar
+          {initialNeed ? "Cancelar" : "Limpiar"}
         </button>
         <button className="primary" disabled={saving}>
-          {saving ? "Guardando…" : "Registrar necesidad"}
+          {saving ? "Guardando…" : initialNeed ? "Guardar cambios" : "Registrar necesidad"}
         </button>
       </div>
     </form>
@@ -1067,11 +1124,20 @@ function List({
   needs,
   role,
   reload,
+  catalogs,
+  orgUnits,
+  profile,
+  userId,
 }: {
   needs: Need[];
   role: Role;
   reload: () => Promise<void>;
+  catalogs: Catalog[];
+  orgUnits: OrgUnit[];
+  profile: Profile | null;
+  userId: string;
 }) {
+  const [editing, setEditing] = useState<Need | null>(null);
   async function status(id: string, value: string) {
     await supabase!
       .from("training_needs")
@@ -1079,13 +1145,48 @@ function List({
       .eq("id", id);
     await reload();
   }
+  async function remove(need: Need) {
+    if (role !== "admin") return;
+    if (!window.confirm(`¿Eliminar el registro “${need.competency}”? La acción quedará auditada.`)) return;
+    const { error } = await supabase!
+      .from("training_needs")
+      .delete()
+      .eq("id", need.id);
+    if (error) window.alert(error.message);
+    else await reload();
+  }
+  if (editing) {
+    return (
+      <NeedForm
+        catalogs={catalogs}
+        orgUnits={orgUnits}
+        profile={profile}
+        userId={userId}
+        initialNeed={editing}
+        onCancel={() => setEditing(null)}
+        onDone={async () => {
+          await reload();
+          setEditing(null);
+        }}
+      />
+    );
+  }
   return (
     <div className="panel">
       <div className="panelhead">
         <h2>Matriz consolidada</h2>
         <span>{needs.length} registros visibles</span>
       </div>
-      <MiniTable needs={needs} />
+      <div className="permission-note">
+        {role === "admin"
+          ? "Como administrador puede modificar o eliminar cualquier registro."
+          : "Puede modificar sus registros para corregir errores. Las modificaciones quedan auditadas."}
+      </div>
+      <MiniTable
+        needs={needs}
+        onEdit={setEditing}
+        onDelete={role === "admin" ? remove : undefined}
+      />
       {role === "admin" && (
         <div className="review">
           <h3>Revisión administrativa</h3>
