@@ -43,6 +43,7 @@ type Profile = {
   area: string | null;
   department: string | null;
   onboarding_completed_at: string | null;
+  can_view_entire_area: boolean;
 };
 type OrgUnit = {
   id: string;
@@ -273,6 +274,11 @@ export default function App() {
         <div className="account">
           <small>{session.user.email}</small>
           <b>{role === "admin" ? "Administrador" : "Usuario"}</b>
+          {role !== "admin" && profile?.department && (
+            <small>
+              {profile.can_view_entire_area ? `Área: ${profile.area}` : `Departamento: ${profile.department}`}
+            </small>
+          )}
           <button onClick={() => supabase!.auth.signOut()}>
             Cerrar sesión
           </button>
@@ -528,21 +534,17 @@ function ProfileSetup({
   orgUnits: OrgUnit[];
   onDone: () => Promise<void>;
 }) {
+  const currentUnit = orgUnits.find(
+    (o) =>
+      o.group_name === profile.occupational_group &&
+      o.area_name === profile.area &&
+      o.department_name === profile.department,
+  );
   const [position, setPosition] = useState(profile.position ?? ""),
-    [group, setGroup] = useState(profile.occupational_group ?? ""),
-    [area, setArea] = useState(profile.area ?? ""),
-    [department, setDepartment] = useState(profile.department ?? ""),
+    [unitId, setUnitId] = useState(currentUnit?.id ?? ""),
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
-  const groups = unique(orgUnits.map((o) => o.group_name));
-  const areas = unique(
-    orgUnits.filter((o) => o.group_name === group).map((o) => o.area_name),
-  );
-  const departments = unique(
-    orgUnits
-      .filter((o) => o.group_name === group && o.area_name === area)
-      .map((o) => o.department_name),
-  );
+  const selectedUnit = orgUnits.find((o) => o.id === unitId);
   const positions = catalogs
     .filter((c) => c.kind === "position" && c.active)
     .map((c) => c.name);
@@ -552,9 +554,9 @@ function ProfileSetup({
     setError("");
     const { error: rpcError } = await supabase!.rpc("complete_own_profile", {
       p_position: position.trim(),
-      p_group: group,
-      p_area: area,
-      p_department: department,
+      p_group: selectedUnit?.group_name ?? "",
+      p_area: selectedUnit?.area_name ?? "",
+      p_department: selectedUnit?.department_name ?? "",
     });
     setSaving(false);
     if (rpcError) setError(rpcError.message);
@@ -566,32 +568,23 @@ function ProfileSetup({
         <img className="login-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
         <div>
           <h1>Complete su perfil</h1>
-          <p>Este registro se solicita una sola vez y permite mostrar únicamente su estructura organizacional.</p>
+          <p>Seleccione su departamento. El grupo ocupacional y el área se asignarán automáticamente y definirán la información que puede consultar.</p>
         </div>
         <div className="fields">
           <Input label="Cargo" value={position} onChange={setPosition} list={positions} required />
-          <Select
-            label="Grupo ocupacional"
-            value={group}
-            values={groups}
-            onChange={(value) => {
-              setGroup(value);
-              setArea("");
-              setDepartment("");
-            }}
-            required
-          />
-          <Select
-            label="Área"
-            value={area}
-            values={areas}
-            onChange={(value) => {
-              setArea(value);
-              setDepartment("");
-            }}
-            required
-          />
-          <Select label="Departamento" value={department} values={departments} onChange={setDepartment} required />
+          <label>
+            Departamento
+            <select value={unitId} onChange={(e) => setUnitId(e.target.value)} required>
+              <option value="">Seleccione…</option>
+              {orgUnits.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.department_name} — {unit.area_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Input label="Grupo ocupacional asignado" value={selectedUnit?.group_name ?? ""} onChange={() => {}} disabled />
+          <Input label="Área asignada" value={selectedUnit?.area_name ?? ""} onChange={() => {}} disabled />
         </div>
         {error && <div className="error">{error}</div>}
         <button className="primary" disabled={saving}>
@@ -833,6 +826,7 @@ function NeedForm({
       )
       .map((o) => o.department_name),
   );
+  const structureLocked = profile?.role !== "admin";
   function setDate(value: string) {
     const month = value ? Number(value.slice(5, 7)) : 0;
     setF((x) => ({
@@ -926,6 +920,7 @@ function NeedForm({
             }))
           }
           required
+          disabled={structureLocked}
         />
         <Select
           label="Área"
@@ -935,6 +930,7 @@ function NeedForm({
             setF((x) => ({ ...x, area: v, department: "" }))
           }
           required
+          disabled={structureLocked}
         />
         <Select
           label="Departamento"
@@ -942,7 +938,13 @@ function NeedForm({
           values={departments}
           onChange={(v) => set("department", v)}
           required
+          disabled={structureLocked}
         />
+        {structureLocked && (
+          <div className="structure-note full">
+            Grupo, área y departamento provienen de su perfil y no pueden modificarse en este registro.
+          </div>
+        )}
         <Input
           label="N.º de participantes"
           type="number"
@@ -1055,6 +1057,7 @@ function Input({
   min,
   step,
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string | number;
@@ -1064,6 +1067,7 @@ function Input({
   min?: string;
   step?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   const id = label.replaceAll(" ", "-");
   return (
@@ -1077,6 +1081,7 @@ function Input({
         min={min}
         step={step}
         required={required}
+        disabled={disabled}
       />
       {list?.length ? (
         <datalist id={id}>
@@ -1468,6 +1473,7 @@ function Admin({
                 <th>Correo</th>
                 <th>Rol</th>
                 <th>Estado</th>
+                <th>Alcance visible</th>
                 <th>Perfil completado</th>
                 <th>Fecha de creación</th>
               </tr>
@@ -1497,6 +1503,25 @@ function Admin({
                     >
                       {user.active ? "Activo" : "Inactivo"}
                     </button>
+                  </td>
+                  <td>
+                    {user.role === "admin" ? (
+                      <span>Toda la organización</span>
+                    ) : (
+                      <select
+                        value={user.can_view_entire_area ? "area" : "department"}
+                        disabled={!user.onboarding_completed_at}
+                        title={!user.onboarding_completed_at ? "El usuario debe completar primero su perfil" : undefined}
+                        onChange={(e) =>
+                          updateUser(user.id, {
+                            can_view_entire_area: e.target.value === "area",
+                          })
+                        }
+                      >
+                        <option value="department">Solo su departamento</option>
+                        <option value="area">Toda su área</option>
+                      </select>
+                    )}
                   </td>
                   <td>{user.onboarding_completed_at ? new Date(user.onboarding_completed_at).toLocaleString("es-EC") : "Pendiente"}</td>
                   <td>{new Date(user.created_at).toLocaleString("es-EC")}</td>
