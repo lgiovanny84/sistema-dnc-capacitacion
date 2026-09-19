@@ -303,6 +303,14 @@ button.secondary,
 .review {
   margin-top: 22px;
 }
+.permission-note {
+  margin: 12px 0 18px;
+  padding: 11px 13px;
+  border-left: 4px solid #183b66;
+  background: #f0f5fa;
+  color: #43516a;
+  font-size: 13px;
+}
 .review > div {
   display: flex;
   align-items: center;
