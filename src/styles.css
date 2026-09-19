@@ -266,6 +266,19 @@ td {
   background: #fff;
   color: #172033;
 }
+.fields input:disabled,
+.fields select:disabled {
+  background: #eef1f5;
+  color: #58667a;
+  cursor: not-allowed;
+}
+.structure-note {
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: #eef5fb;
+  color: #43516a;
+  font-size: 13px;
+}
 .full {
   grid-column: 1/-1;
 }
