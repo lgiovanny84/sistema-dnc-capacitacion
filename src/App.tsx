@@ -1603,12 +1603,13 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
       <h2>Temas y presupuesto</h2>
       <p>Edite el tema, la fecha y el presupuesto. El trimestre se calcula automáticamente.</p>
       <div className="table admin-needs"><table>
-        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Fecha</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
           const d = draft(n);
           return <tr key={n.id}>
             <td><input value={d.competency} onChange={(e) => change(n, { competency: e.target.value })} /></td>
             <td>{n.area}</td>
+            <td>{n.department}</td>
             <td><input type="date" value={d.planned_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
             <td>{d.quarter}</td>
             <td><input type="number" min="0" step="0.01" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: Number(e.target.value) })} /></td>
