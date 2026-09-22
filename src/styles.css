@@ -585,6 +585,122 @@ footer {
   font-size: 12px;
   padding: 20px;
 }
+
+.module-tabs {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+}
+.module-tabs p,
+.panelhead p {
+  margin: 4px 0 0;
+  color: #647186;
+}
+.module-tabs .actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.budget-cards,
+.strategic-cards {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.budget-cards .card strong,
+.strategic-cards .card strong {
+  font-size: 23px;
+}
+.dashboard-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+.dashboard-toolbar label,
+.panelhead > label {
+  display: grid;
+  gap: 5px;
+  color: #647186;
+  font-size: 13px;
+  font-weight: 700;
+}
+.dashboard-toolbar input,
+.panelhead > label input {
+  max-width: 130px;
+}
+.upload-box {
+  border: 2px dashed #b8c4d4;
+  background: #f7f9fc;
+  border-radius: 12px;
+  padding: 28px;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  cursor: pointer;
+  margin: 18px 0;
+}
+.upload-box input {
+  max-width: 320px;
+}
+.upload-box span {
+  color: #647186;
+  font-size: 13px;
+}
+.preview {
+  margin: 18px 0;
+  max-height: 340px;
+}
+.budget-form {
+  grid-template-columns: minmax(240px, 2fr) 1fr 1fr auto;
+  align-items: end;
+}
+.execution-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+.execution-table {
+  max-height: 620px;
+}
+.execution-table table {
+  min-width: 2700px;
+}
+.execution-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  white-space: nowrap;
+}
+.budget-summary table {
+  min-width: 980px;
+}
+
+@media (max-width: 1050px) {
+  .budget-cards,
+  .strategic-cards,
+  .execution-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .module-tabs {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .module-tabs .actions {
+    justify-content: flex-start;
+  }
+  .budget-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .budget-cards,
+  .strategic-cards,
+  .execution-filters,
+  .budget-form {
+    grid-template-columns: 1fr;
+  }
+}
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
