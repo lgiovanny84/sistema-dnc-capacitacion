@@ -11,6 +11,7 @@ import {
 type Role = "admin" | "user";
 type Need = {
   id: string;
+  period_id: string | null;
   created_at: string;
   updated_at: string;
   owner_id: string;
@@ -37,6 +38,7 @@ type Need = {
   provider: string;
   observations: string;
 };
+type PlanningPeriod = { id: string; name: string; start_date: string; end_date: string; active: boolean; created_at: string };
 type Catalog = { id: string; kind: string; name: string; active: boolean };
 type Profile = {
   id: string;
@@ -131,6 +133,8 @@ export default function App() {
     [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]),
     [budgetAllocations, setBudgetAllocations] = useState<BudgetAllocation[]>([]),
     [importBatches, setImportBatches] = useState<ImportBatch[]>([]),
+    [periods, setPeriods] = useState<PlanningPeriod[]>([]),
+    [selectedPeriodId, setSelectedPeriodId] = useState(() => localStorage.getItem("dnc-period-id") ?? ""),
     [menuCollapsed, setMenuCollapsed] = useState(() => localStorage.getItem("dnc-menu-collapsed") === "true"),
     [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
@@ -164,6 +168,7 @@ export default function App() {
       { data: c, error: ce },
       { data: p, error: pe },
       { data: o, error: oe },
+      { data: periodData, error: periodError },
     ] = await Promise.all([
       supabase!
         .from("training_needs")
@@ -182,8 +187,9 @@ export default function App() {
         .order("group_name")
         .order("area_name")
         .order("department_name"),
+      supabase!.from("planning_periods").select("*").order("start_date", { ascending: false }),
     ]);
-    const firstError = ne || ce || pe || oe;
+    const firstError = ne || ce || pe || oe || periodError;
     setNotice(
       firstError
         ? `No fue posible cargar los datos: ${firstError.message}`
@@ -194,6 +200,14 @@ export default function App() {
     setRole((p?.role as Role) || "user");
     setProfile((p as Profile) ?? null);
     setOrgUnits((o ?? []) as OrgUnit[]);
+    const loadedPeriods = (periodData ?? []) as PlanningPeriod[];
+    setPeriods(loadedPeriods);
+    setSelectedPeriodId((current) => {
+      const selected = loadedPeriods.find((period) => period.id === current) ?? loadedPeriods.find((period) => period.active && new Date().toISOString().slice(0, 10) >= period.start_date && new Date().toISOString().slice(0, 10) <= period.end_date) ?? loadedPeriods[0];
+      const next = selected?.id ?? "";
+      if (next) localStorage.setItem("dnc-period-id", next);
+      return next;
+    });
     if (p?.role === "admin") {
       const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
         await Promise.all([
@@ -229,7 +243,12 @@ export default function App() {
         onDone={load}
       />
     );
-  const visible = needs.filter(
+  const activePeriod = periods.find((period) => period.id === selectedPeriodId) ?? periods[0];
+  const periodNeeds = needs.filter((need) => !activePeriod || need.period_id === activePeriod.id);
+  const periodRecords = trainingRecords.filter((record) => !activePeriod || record.period_id === activePeriod.id);
+  const periodBatches = importBatches.filter((batch) => !activePeriod || batch.period_id === activePeriod.id);
+  const periodBudgets = budgetAllocations.filter((allocation) => !activePeriod || allocation.period_id === activePeriod.id);
+  const visible = periodNeeds.filter(
     (n) =>
       (!filters.type || n.type === filters.type) &&
       (!filters.factor || n.factor === filters.factor) &&
@@ -240,7 +259,9 @@ export default function App() {
       (s, n) => s + Number(n.hours) * Number(n.participants),
       0,
     ),
-    budget = visible.reduce((s, n) => s + Number(n.estimated_cost), 0);
+    budget = visible.reduce((s, n) => s + Number(n.estimated_cost), 0),
+    periodTotalHours = periodNeeds.reduce((s, n) => s + Number(n.hours) * Number(n.participants), 0),
+    periodBudget = periodNeeds.reduce((s, n) => s + Number(n.estimated_cost), 0);
   const options = (kind: string) => {
     if (kind === "area") return unique(orgUnits.map((o) => o.area_name));
     if (kind === "occupational_group")
@@ -284,7 +305,8 @@ export default function App() {
     a.href = URL.createObjectURL(
       new Blob([csv], { type: "text/csv;charset=utf-8" }),
     );
-    a.download = `reporte-dnc-${new Date().toISOString().slice(0, 10)}.csv`;
+    const periodLabel = (activePeriod?.name ?? "sin-periodo").replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]+/g, "-").replace(/^-|-$/g, "");
+    a.download = `reporte-dnc-${periodLabel}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   }
@@ -357,7 +379,7 @@ export default function App() {
                       : "Administración"}
             </h1>
           </div>
-          <span className="secure">● Conexión segura</span>
+          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!periods.length}>{periods.map((period) => <option key={period.id} value={period.id}>{period.name} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
         {notice && (
           <div className="alert">
@@ -369,12 +391,13 @@ export default function App() {
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
           <Dashboard
-            needs={needs}
-            totalHours={totalHours}
-            budget={budget}
+            needs={periodNeeds}
+            totalHours={periodTotalHours}
+            budget={periodBudget}
             role={role}
-            trainingRecords={trainingRecords}
-            budgetAllocations={budgetAllocations}
+            trainingRecords={periodRecords}
+            budgetAllocations={periodBudgets}
+            periodName={activePeriod?.name ?? "Sin período"}
           />
         ) : tab === "new" ? (
           <NeedForm
@@ -386,6 +409,8 @@ export default function App() {
               setTab("list");
             }}
             userId={session.user.id}
+            periodId={activePeriod?.id ?? ""}
+            period={activePeriod}
           />
         ) : tab === "list" ? (
           <List
@@ -408,15 +433,17 @@ export default function App() {
             exportCSV={exportCSV}
           />
         ) : tab === "execution" && role === "admin" ? (
-          <TrainingExecutionModule
-            records={trainingRecords}
-            budgets={budgetAllocations}
-            batches={importBatches}
-            departments={unique(orgUnits.map((unit) => unit.department_name))}
-            reload={load}
-          />
+          activePeriod ? <TrainingExecutionModule
+              records={periodRecords}
+              budgets={periodBudgets}
+              plans={periodNeeds}
+              batches={periodBatches}
+              period={activePeriod}
+              departments={unique(orgUnits.map((unit) => unit.department_name))}
+              reload={load}
+            /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
         ) : (
-          <Admin catalogs={catalogs} orgUnits={orgUnits} needs={needs} reload={load} />
+          <Admin catalogs={catalogs} orgUnits={orgUnits} needs={periodNeeds} periods={periods} reload={load} />
         )}
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
@@ -674,6 +701,7 @@ function Dashboard({
   role,
   trainingRecords,
   budgetAllocations,
+  periodName,
 }: {
   needs: Need[];
   totalHours: number;
@@ -681,8 +709,8 @@ function Dashboard({
   role: Role;
   trainingRecords: TrainingRecord[];
   budgetAllocations: BudgetAllocation[];
+  periodName: string;
 }) {
-  const currentYear = new Date().getFullYear();
   return (
     <>
       <section className="cards">
@@ -701,7 +729,7 @@ function Dashboard({
         />
       </section>
       {role === "admin" && (
-        <BudgetSummary records={trainingRecords} budgets={budgetAllocations} year={currentYear} />
+        <BudgetSummary records={trainingRecords} budgets={budgetAllocations} plans={needs} periodName={periodName} />
       )}
       <section className="grid2">
         <div className="panel">
@@ -855,6 +883,8 @@ function NeedForm({
   profile,
   onDone,
   userId,
+  periodId,
+  period,
   initialNeed,
   onCancel,
 }: {
@@ -863,6 +893,8 @@ function NeedForm({
   profile: Profile | null;
   onDone: () => void | Promise<void>;
   userId: string;
+  periodId?: string;
+  period?: PlanningPeriod;
   initialNeed?: Need;
   onCancel?: () => void;
 }) {
@@ -934,6 +966,10 @@ function NeedForm({
       );
       return;
     }
+    if (period && f.planned_date && (f.planned_date < period.start_date || f.planned_date > period.end_date)) {
+      setError(`La fecha planificada debe estar dentro del período ${period.name}: ${period.start_date} a ${period.end_date}.`);
+      return;
+    }
     setSaving(true);
     const values = { ...f, planned_date: f.planned_date || null };
     const { error } = initialNeed
@@ -944,6 +980,7 @@ function NeedForm({
       : await supabase!.from("training_needs").insert({
           ...values,
           owner_id: userId,
+          period_id: periodId || null,
           status: "Pendiente",
         });
     setSaving(false);
@@ -955,7 +992,7 @@ function NeedForm({
       <div className="intro">
         <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Necesidad basada en una brecha verificable"}</h2>
         <p>
-          Vincule la brecha con una competencia, resultado esperado y evidencia.
+          Vincule la brecha con una competencia, resultado esperado y evidencia.{period ? ` Período: ${period.name}.` : ""}
         </p>
       </div>
       <div className="fields">
@@ -1477,15 +1514,65 @@ function Reports({
     </>
   );
 }
+function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload: () => Promise<void> }) {
+  const currentYear = new Date().getFullYear();
+  const [name, setName] = useState(String(currentYear + 1));
+  const [startDate, setStartDate] = useState(`${currentYear + 1}-01-01`);
+  const [endDate, setEndDate] = useState(`${currentYear + 1}-12-31`);
+  const [drafts, setDrafts] = useState<Record<string, Pick<PlanningPeriod, "name" | "start_date" | "end_date" | "active">>>({});
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  async function createPeriod(e: FormEvent) {
+    e.preventDefault();
+    if (endDate < startDate) { setMessage("La fecha final no puede ser anterior a la fecha inicial."); return; }
+    if (periods.some((period) => startDate <= period.end_date && endDate >= period.start_date)) { setMessage("El rango se superpone con un período existente. Ajuste las fechas antes de guardar."); return; }
+    const { error } = await supabase!.from("planning_periods").insert({ name: name.trim(), start_date: startDate, end_date: endDate, active: true });
+    setMessage(error?.message ?? "Período creado correctamente.");
+    if (!error) await reload();
+  }
+  const draft = (period: PlanningPeriod) => drafts[period.id] ?? { name: period.name, start_date: period.start_date, end_date: period.end_date, active: period.active };
+  function change(period: PlanningPeriod, values: Partial<ReturnType<typeof draft>>) {
+    setDrafts((all) => ({ ...all, [period.id]: { ...draft(period), ...values } }));
+  }
+  async function saveAll() {
+    const entries = Object.entries(drafts);
+    if (!entries.length) return;
+    const invalid = entries.find(([, value]) => !value.name.trim() || value.end_date < value.start_date);
+    if (invalid) { setMessage("Revise nombres y rangos: ningún período puede terminar antes de iniciar."); return; }
+    const effective = periods.map((period) => ({ id: period.id, ...draft(period) }));
+    const overlap = effective.some((period, index) => effective.some((other, otherIndex) => index < otherIndex && period.start_date <= other.end_date && period.end_date >= other.start_date));
+    if (overlap) { setMessage("Existen períodos con fechas superpuestas. Corrija los rangos antes de guardar."); return; }
+    setSaving(true);
+    const results = await Promise.all(entries.map(([id, value]) => supabase!.from("planning_periods").update({ ...value, name: value.name.trim() }).eq("id", id)));
+    setSaving(false);
+    const error = results.find((result) => result.error)?.error;
+    setMessage(error?.message ?? `${entries.length} períodos fueron actualizados.`);
+    if (!error) { setDrafts({}); await reload(); }
+  }
+  async function remove(period: PlanningPeriod) {
+    if (!window.confirm(`¿Eliminar el período “${period.name}”? Solo será posible si no contiene registros vinculados.`)) return;
+    const { error } = await supabase!.from("planning_periods").delete().eq("id", period.id);
+    setMessage(error?.message ?? "Período eliminado.");
+    if (!error) await reload();
+  }
+  return <div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
+    <form className="inline period-create" onSubmit={createPeriod}><label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label><label>Desde<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label>Hasta<input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label><button className="primary">Crear período</button></form>
+    {message && <div className="statusmsg">{message}</div>}
+    <div className="table"><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></div>
+  </div>;
+}
+
 function Admin({
   catalogs,
   orgUnits,
   needs,
+  periods,
   reload,
 }: {
   catalogs: Catalog[];
   orgUnits: OrgUnit[];
   needs: Need[];
+  periods: PlanningPeriod[];
   reload: () => Promise<void>;
 }) {
   const [kind, setKind] = useState("factor"),
@@ -1601,6 +1688,7 @@ function Admin({
   }
   return (
     <>
+      <PeriodManager periods={periods} reload={reload} />
       <CorrectionRequests needs={needs} users={users} />
       <AdminNeeds needs={needs} reload={reload} />
       {editingUser && (
