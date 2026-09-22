@@ -4,6 +4,7 @@ import { configured, supabase } from "./supabase";
 import {
   BudgetAllocation,
   BudgetSummary,
+  ImportBatch,
   TrainingExecutionModule,
   TrainingRecord,
 } from "./trainingExecution";
@@ -129,6 +130,8 @@ export default function App() {
     [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]),
     [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]),
     [budgetAllocations, setBudgetAllocations] = useState<BudgetAllocation[]>([]),
+    [importBatches, setImportBatches] = useState<ImportBatch[]>([]),
+    [menuCollapsed, setMenuCollapsed] = useState(() => localStorage.getItem("dnc-menu-collapsed") === "true"),
     [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
     [notice, setNotice] = useState(""),
@@ -192,20 +195,23 @@ export default function App() {
     setProfile((p as Profile) ?? null);
     setOrgUnits((o ?? []) as OrgUnit[]);
     if (p?.role === "admin") {
-      const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }] =
+      const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
         await Promise.all([
           supabase!.from("training_records").select("*").order("start_date", { ascending: false }),
           supabase!.from("department_budgets").select("*").order("year", { ascending: false }).order("department_name"),
+          supabase!.from("training_import_batches").select("*").order("uploaded_at", { ascending: false }),
         ]);
-      if (executedError || allocationsError) {
-        setNotice(`No fue posible cargar la ejecución de capacitación: ${(executedError || allocationsError)?.message}`);
+      if (executedError || allocationsError || batchesError) {
+        setNotice(`No fue posible cargar la ejecución de capacitación: ${(executedError || allocationsError || batchesError)?.message}`);
       } else {
         setTrainingRecords((executed ?? []) as TrainingRecord[]);
         setBudgetAllocations((allocations ?? []) as BudgetAllocation[]);
+        setImportBatches((batches ?? []) as ImportBatch[]);
       }
     } else {
       setTrainingRecords([]);
       setBudgetAllocations([]);
+      setImportBatches([]);
     }
     setLoading(false);
   }
@@ -283,10 +289,22 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   }
   return (
-    <div className="shell">
+    <div className={`shell ${menuCollapsed ? "collapsed" : ""}`}>
       <aside>
+        <button
+          className="menu-toggle"
+          aria-label={menuCollapsed ? "Expandir menú" : "Contraer menú"}
+          title={menuCollapsed ? "Expandir menú" : "Contraer menú"}
+          onClick={() => setMenuCollapsed((current) => {
+            localStorage.setItem("dnc-menu-collapsed", String(!current));
+            return !current;
+          })}
+        >
+          {menuCollapsed ? "›" : "‹"}
+        </button>
         <button className="brand" onClick={() => setTab("dashboard")} aria-label="Ir al inicio">
-          <img src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
+          <img className="brand-full" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
+          <img className="brand-icon" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
           <small>Sistema DNC · Talento Humano</small>
         </button>
         <nav>
@@ -303,7 +321,8 @@ export default function App() {
               onClick={() => setTab(id)}
               key={id}
             >
-              {label}
+              <span className="nav-short" aria-hidden="true">{label.slice(0, 1)}</span>
+              <span className="nav-label">{label}</span>
             </button>
           ))}
         </nav>
@@ -315,8 +334,8 @@ export default function App() {
               {profile.can_view_entire_area ? `Área: ${profile.area}` : `Departamento: ${profile.department}`}
             </small>
           )}
-          <button onClick={() => supabase!.auth.signOut()}>
-            Cerrar sesión
+          <button onClick={() => supabase!.auth.signOut()} title="Cerrar sesión">
+            <span className="logout-full">Cerrar sesión</span><span className="logout-short">Salir</span>
           </button>
         </div>
       </aside>
@@ -392,6 +411,7 @@ export default function App() {
           <TrainingExecutionModule
             records={trainingRecords}
             budgets={budgetAllocations}
+            batches={importBatches}
             departments={unique(orgUnits.map((unit) => unit.department_name))}
             reload={load}
           />

@@ -26,6 +26,9 @@ textarea {
   display: grid;
   grid-template-columns: 245px 1fr;
 }
+.shell.collapsed {
+  grid-template-columns: 82px 1fr;
+}
 aside {
   background: #10233f;
   color: #fff;
@@ -35,6 +38,20 @@ aside {
   position: sticky;
   top: 0;
   height: 100vh;
+}
+.menu-toggle {
+  position: absolute;
+  top: 12px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #52657d;
+  border-radius: 8px;
+  background: #183556;
+  color: #fff;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
 }
 .brand {
   display: flex;
@@ -47,6 +64,44 @@ aside {
   color: #fff;
   text-align: left;
   cursor: pointer;
+}
+.brand-icon,
+.nav-short,
+.logout-short {
+  display: none;
+}
+.shell.collapsed aside {
+  padding-inline: 12px;
+}
+.shell.collapsed .brand {
+  margin-top: 28px;
+  align-items: center;
+}
+.shell.collapsed .brand-full,
+.shell.collapsed .brand small,
+.shell.collapsed .nav-label,
+.shell.collapsed .account small,
+.shell.collapsed .account b,
+.shell.collapsed .logout-full {
+  display: none;
+}
+.shell.collapsed .brand-icon {
+  display: block;
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.shell.collapsed .nav-short,
+.shell.collapsed .logout-short {
+  display: inline;
+}
+.shell.collapsed nav button {
+  text-align: center;
+  font-weight: 800;
+  font-size: 17px;
+}
+.shell.collapsed .account {
+  padding-inline: 0;
 }
 .brand img {
   width: 100%;
@@ -645,6 +700,17 @@ footer {
   color: #647186;
   font-size: 13px;
 }
+.period-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+.batch-manager {
+  margin-top: 28px;
+  border-top: 1px solid #e1e6ed;
+  padding-top: 22px;
+}
 .preview {
   margin: 18px 0;
   max-height: 340px;
@@ -691,6 +757,12 @@ footer {
   .budget-form {
     grid-template-columns: 1fr 1fr;
   }
+  .period-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .period-fields label:first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 650px) {
@@ -700,14 +772,34 @@ footer {
   .budget-form {
     grid-template-columns: 1fr;
   }
+  .period-fields {
+    grid-template-columns: 1fr;
+  }
+  .period-fields label:first-child {
+    grid-column: auto;
+  }
 }
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
   }
+  .shell.collapsed {
+    grid-template-columns: 1fr;
+  }
   aside {
     height: auto;
     position: relative;
+  }
+  .shell.collapsed aside {
+    padding: 18px;
+  }
+  .shell.collapsed .brand {
+    margin-top: 0;
+  }
+  .shell.collapsed nav,
+  .shell.collapsed .account,
+  .shell.collapsed .brand small {
+    display: none;
   }
   nav {
     grid-template-columns: repeat(3, 1fr);
