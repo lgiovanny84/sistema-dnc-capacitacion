@@ -4,6 +4,7 @@ import { supabase } from "./supabase";
 
 export type TrainingRecord = {
   id: string;
+  period_id: string | null;
   name: string;
   gender: string;
   position: string;
@@ -33,6 +34,7 @@ export type TrainingRecord = {
 
 export type ImportBatch = {
   id: string;
+  period_id: string | null;
   period_name: string;
   period_start: string;
   period_end: string;
@@ -44,6 +46,7 @@ export type ImportBatch = {
 
 export type BudgetAllocation = {
   id: string;
+  period_id: string | null;
   year: number;
   department_name: string;
   requesting_area_name: string | null;
@@ -51,6 +54,17 @@ export type BudgetAllocation = {
   bank_hours: number;
   created_at: string;
   updated_at: string;
+};
+
+export type TrainingPlan = {
+  id: string;
+  period_id: string | null;
+  department: string;
+  estimated_cost: number;
+  hours: number;
+  participants: number;
+  planned_date: string | null;
+  created_at: string;
 };
 
 export const TRAINING_HEADERS = [
@@ -182,25 +196,33 @@ function recordYear(record: TrainingRecord) {
   return Number(record.start_date?.slice(0, 4) || 0);
 }
 
-function usedForDepartment(records: TrainingRecord[], department: string, year: number) {
+function usedForDepartment(records: TrainingRecord[], department: string) {
   return records.filter(
-    (r) => recordYear(r) === year && norm(r.requesting_area) === norm(department) && isCompleted(r.status),
+    (r) => norm(r.requesting_area) === norm(department) && isCompleted(r.status),
   );
 }
 
-export function BudgetSummary({ records, budgets, year }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; year: number }) {
-  const annual = budgets.filter((b) => b.year === year);
+export function BudgetSummary({ records, budgets, plans, periodName }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; plans: TrainingPlan[]; periodName: string }) {
+  const mappings = new Map(budgets.map((budget) => [norm(budget.department_name), budget]));
+  const annual = [...plans.filter((plan) => plan.department.trim()).reduce((grouped, plan) => {
+    const key = norm(plan.department);
+    const current = grouped.get(key) ?? { id: key, department_name: plan.department.trim(), requesting_area_name: null as string | null, allocated_budget: 0, bank_hours: 0 };
+    current.allocated_budget += Number(plan.estimated_cost);
+    current.bank_hours += Number(plan.hours) * Number(plan.participants);
+    grouped.set(key, current);
+    return grouped;
+  }, new Map<string, { id: string; department_name: string; requesting_area_name: string | null; allocated_budget: number; bank_hours: number }>()).values()].map((line) => ({ ...line, requesting_area_name: mappings.get(norm(line.department_name))?.requesting_area_name || null }));
   const assigned = annual.reduce((sum, b) => sum + Number(b.allocated_budget), 0);
   const bank = annual.reduce((sum, b) => sum + Number(b.bank_hours), 0);
   const relevantKeys = new Set(annual.map((b) => norm(b.requesting_area_name || b.department_name)));
-  const usedRows = records.filter((r) => recordYear(r) === year && isCompleted(r.status) && relevantKeys.has(norm(r.requesting_area)));
+  const usedRows = records.filter((r) => isCompleted(r.status) && relevantKeys.has(norm(r.requesting_area)));
   const used = usedRows.reduce((sum, r) => sum + Number(r.cost), 0);
   const fulfilled = usedRows.reduce((sum, r) => sum + Number(r.duration), 0);
-  const unmatched = [...new Set(records.filter((r) => recordYear(r) === year && isCompleted(r.status) && !relevantKeys.has(norm(r.requesting_area))).map((r) => r.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const unmatched = [...new Set(records.filter((r) => isCompleted(r.status) && !relevantKeys.has(norm(r.requesting_area))).map((r) => r.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return (
     <>
       <section className="cards budget-cards">
-        <Metric label="Valor aprobado" value={money(assigned)} />
+        <Metric label="Valor presupuestado" value={money(assigned)} />
         <Metric label="Valor utilizado" value={money(used)} />
         <Metric label="Saldo disponible" value={money(assigned - used)} />
         <Metric label="Banco de horas" value={bank.toLocaleString("es-EC")} />
@@ -209,12 +231,12 @@ export function BudgetSummary({ records, budgets, year }: { records: TrainingRec
       </section>
       {annual.length > 0 && (
         <div className="panel budget-summary">
-          <div className="panelhead"><h2>Ejecución presupuestaria y banco de horas {year}</h2><span>DEPARTAMENTO del sistema ↔ AREA REQUIRIENTE del Excel</span></div>
+          <div className="panelhead"><div><h2>Ejecución presupuestaria y banco de horas · {periodName}</h2><p>Presupuesto y horas: Módulo 1. Gasto y duración: Excel ejecutado.</p></div><span>DEPARTAMENTO ↔ AREA REQUIRIENTE</span></div>
           <div className="table"><table>
             <thead><tr><th>Departamento</th><th>Área requiriente cruzada</th><th>Presupuestado</th><th>Gastado</th><th>Saldo</th><th>Horas presupuestadas</th><th>Horas cargadas</th><th>% presupuesto</th><th>% horas</th></tr></thead>
             <tbody>{annual.map((b) => {
               const crossName = b.requesting_area_name || b.department_name;
-              const rows = usedForDepartment(records, crossName, year);
+              const rows = usedForDepartment(records, crossName);
               const usedBudget = rows.reduce((s, r) => s + Number(r.cost), 0);
               const hours = rows.reduce((s, r) => s + Number(r.duration), 0);
               return <tr key={b.id}><td><b>{b.department_name}</b></td><td>{crossName}{norm(crossName) === norm(b.department_name) ? <small className="cross-mode">Automático</small> : <small className="cross-mode override">Recategorizado</small>}</td><td>{money(b.allocated_budget)}</td><td>{money(usedBudget)}</td><td>{money(Number(b.allocated_budget) - usedBudget)}</td><td>{Number(b.bank_hours).toLocaleString("es-EC")}</td><td>{hours.toLocaleString("es-EC")}</td><td>{b.allocated_budget ? `${((usedBudget / Number(b.allocated_budget)) * 100).toFixed(1)}%` : "0%"}</td><td>{b.bank_hours ? `${((hours / Number(b.bank_hours)) * 100).toFixed(1)}%` : "0%"}</td></tr>;
@@ -222,7 +244,7 @@ export function BudgetSummary({ records, budgets, year }: { records: TrainingRec
           </table></div>
         </div>
       )}
-      {unmatched.length > 0 && <div className="alert budget-warning"><div><b>Departamentos sin cruce presupuestario</b><p>Estas AREA REQUIRIENTE del Excel no coinciden automáticamente con un DEPARTAMENTO presupuestado: {unmatched.join(", ")}. Puede recategorizarlas en “Asignaciones configuradas”.</p></div></div>}
+      {unmatched.length > 0 && <div className="alert budget-warning"><div><b>Registros ejecutados sin departamento presupuestado</b><p>Estas AREA REQUIRIENTE del Excel no coinciden con un DEPARTAMENTO del Módulo 1: {unmatched.join(", ")}. Puede recategorizarlas en “Reglas de cruce”.</p></div></div>}
     </>
   );
 }
@@ -234,20 +256,21 @@ function Metric({ label, value }: { label: string; value: string }) {
 export function TrainingExecutionModule({
   records,
   budgets,
+  plans,
   batches,
+  period,
   departments,
   reload,
 }: {
   records: TrainingRecord[];
   budgets: BudgetAllocation[];
+  plans: TrainingPlan[];
   batches: ImportBatch[];
+  period: { id: string; name: string; start_date: string; end_date: string };
   departments: string[];
   reload: () => Promise<void>;
 }) {
-  const currentYear = new Date().getFullYear();
-  const availableYears = [...records.map(recordYear), ...budgets.map((b) => b.year)].filter(Boolean);
   const [section, setSection] = useState<"dashboard" | "import" | "budget" | "report">("dashboard");
-  const [year, setYear] = useState(availableYears.length ? Math.max(...availableYears) : currentYear);
   return (
     <>
       <div className="panel module-tabs">
@@ -256,20 +279,17 @@ export function TrainingExecutionModule({
           {(["dashboard", "import", "budget", "report"] as const).map((id) => <button key={id} className={section === id ? "primary" : "secondary"} onClick={() => setSection(id)}>{id === "dashboard" ? "Dashboard" : id === "import" ? "Cargar Excel" : id === "budget" ? "Presupuesto y horas" : "Reportes"}</button>)}
         </div>
       </div>
-      {section === "dashboard" && <ExecutionDashboard records={records} budgets={budgets} year={year} setYear={setYear} />}
-      {section === "import" && <ExcelImporter records={records} batches={batches} reload={reload} />}
-      {section === "budget" && <BudgetManager records={records} budgets={budgets} departments={departments} year={year} setYear={setYear} reload={reload} />}
-      {section === "report" && <ExecutionReport records={records} batches={batches} />}
+      {section === "dashboard" && <ExecutionDashboard records={records} budgets={budgets} plans={plans} periodName={period.name} />}
+      {section === "import" && <ExcelImporter records={records} batches={batches} period={period} reload={reload} />}
+      {section === "budget" && <BudgetManager records={records} budgets={budgets} plans={plans} departments={departments} period={period} reload={reload} />}
+      {section === "report" && <ExecutionReport records={records} batches={batches} periodName={period.name} />}
     </>
   );
 }
 
-function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]; batches: ImportBatch[]; reload: () => Promise<void> }) {
-  const [rows, setRows] = useState<Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[]>([]);
+function ExcelImporter({ records, batches, period, reload }: { records: TrainingRecord[]; batches: ImportBatch[]; period: { id: string; name: string; start_date: string; end_date: string }; reload: () => Promise<void> }) {
+  const [rows, setRows] = useState<Omit<TrainingRecord, "id" | "period_id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[]>([]);
   const [filename, setFilename] = useState("");
-  const [periodName, setPeriodName] = useState(String(new Date().getFullYear()));
-  const [periodStart, setPeriodStart] = useState(`${new Date().getFullYear()}-01-01`);
-  const [periodEnd, setPeriodEnd] = useState(`${new Date().getFullYear()}-12-31`);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const known = useMemo(() => new Set(records.map((r) => r.source_row_hash)), [records]);
@@ -290,7 +310,7 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
       const positions = TRAINING_HEADERS.map((header) => actual.indexOf(norm(header)));
       const missing = TRAINING_HEADERS.filter((_, index) => positions[index] < 0);
       if (missing.length) throw new Error(`Faltan cabeceras obligatorias: ${missing.join(", ")}.`);
-      const parsed = [] as Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[];
+      const parsed = [] as Omit<TrainingRecord, "id" | "period_id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[];
       const invalidDates: string[] = [];
       for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
         const row = sheet.getRow(rowNumber);
@@ -325,13 +345,9 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
 
   async function upload() {
     if (!rows.length) return;
-    if (!periodName.trim() || !periodStart || !periodEnd || periodEnd < periodStart) {
-      setMessage("Defina un nombre y un rango válido para el período.");
-      return;
-    }
-    const outside = rows.filter((row) => row.start_date && (row.start_date < periodStart || row.start_date > periodEnd));
+    const outside = rows.filter((row) => row.start_date && (row.start_date < period.start_date || row.start_date > period.end_date));
     if (outside.length) {
-      setMessage(`${outside.length} filas tienen FECHA INICIO fuera del período ${periodStart} a ${periodEnd}. Corrija el archivo o el período.`);
+      setMessage(`${outside.length} filas tienen FECHA INICIO fuera del período ${period.name} (${period.start_date} a ${period.end_date}). Corrija el archivo o seleccione otro período.`);
       return;
     }
     setBusy(true);
@@ -344,7 +360,7 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
     }
     const { data: batch, error: batchError } = await supabase!
       .from("training_import_batches")
-      .insert({ period_name: periodName.trim(), period_start: periodStart, period_end: periodEnd, source_filename: filename, row_count: fresh.length, uploaded_by: data.user?.id })
+      .insert({ period_id: period.id, period_name: period.name, period_start: period.start_date, period_end: period.end_date, source_filename: filename, row_count: fresh.length, uploaded_by: data.user?.id })
       .select("id")
       .single();
     if (batchError || !batch) {
@@ -354,8 +370,8 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
     }
     let errorMessage = "";
     for (let index = 0; index < fresh.length; index += 400) {
-      const payload = fresh.slice(index, index + 400).map((row) => ({ ...row, import_batch_id: batch.id }));
-      const { error } = await supabase!.from("training_records").upsert(payload, { onConflict: "source_row_hash", ignoreDuplicates: true });
+      const payload = fresh.slice(index, index + 400).map((row) => ({ ...row, period_id: period.id, import_batch_id: batch.id }));
+      const { error } = await supabase!.from("training_records").upsert(payload, { onConflict: "period_id,source_row_hash", ignoreDuplicates: true });
       if (error) { errorMessage = error.message; break; }
     }
     setBusy(false);
@@ -364,7 +380,7 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
       setMessage(errorMessage);
     }
     else {
-      setMessage(`Base “${periodName.trim()}” cargada: ${fresh.length} filas nuevas; ${rows.length - fresh.length} duplicadas omitidas.`);
+      setMessage(`Base del período “${period.name}” cargada: ${fresh.length} filas nuevas; ${rows.length - fresh.length} duplicadas omitidas.`);
       setRows([]);
       await reload();
     }
@@ -378,15 +394,15 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
   }
 
   async function resetRecords() {
-    const confirmation = window.prompt("Esta acción eliminará TODAS las bases de capacitación ejecutada. Escriba RESETEAR para confirmar. Los presupuestos se conservarán.");
+    const confirmation = window.prompt(`Esta acción eliminará TODAS las bases ejecutadas del período “${period.name}”. Escriba RESETEAR para confirmar. El levantamiento y sus presupuestos se conservarán.`);
     if (confirmation !== "RESETEAR") {
       setMessage("Reseteo cancelado.");
       return;
     }
-    const { error } = await supabase!.from("training_import_batches").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    const { error } = await supabase!.from("training_import_batches").delete().eq("period_id", period.id);
     if (!error) {
-      const { error: legacyError } = await supabase!.from("training_records").delete().is("import_batch_id", null);
-      setMessage(legacyError?.message ?? "Todas las bases ejecutadas fueron eliminadas. Los presupuestos permanecen intactos.");
+      const { error: legacyError } = await supabase!.from("training_records").delete().eq("period_id", period.id).is("import_batch_id", null);
+      setMessage(legacyError?.message ?? `Todas las bases ejecutadas del período “${period.name}” fueron eliminadas. El levantamiento permanece intacto.`);
       if (!legacyError) await reload();
     } else setMessage(error.message);
   }
@@ -403,29 +419,28 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
 
   return <div className="panel">
     <div className="panelhead"><div><h2>Carga masiva desde Excel</h2><p>Solo se procesa la primera hoja. Las 20 cabeceras son obligatorias; se omiten filas duplicadas.</p></div><button className="secondary" onClick={() => void template()}>Descargar plantilla</button></div>
-    <div className="period-fields"><label>Nombre del período<input value={periodName} onChange={(e) => setPeriodName(e.target.value)} placeholder="Ej. Plan 2026 / Primer semestre" required /></label><label>Desde<input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} required /></label><label>Hasta<input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} required /></label></div>
+    <div className="period-context"><b>Período seleccionado: {period.name}</b><span>{period.start_date} a {period.end_date}</span></div>
     <label className="upload-box"><b>Seleccione archivo Excel .xlsx</b><input type="file" accept=".xlsx" onChange={(e) => void readFile(e.target.files?.[0])} /><span>{filename || "Ningún archivo seleccionado"}</span></label>
     {message && <div className={rows.length ? "success" : "error"}>{message}</div>}
     {rows.length > 0 && <><div className="table preview"><table><thead><tr>{TRAINING_HEADERS.slice(0, 8).map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.slice(0, 8).map((row) => <tr key={row.source_row_hash}><td>{row.name}</td><td>{row.gender}</td><td>{row.position}</td><td>{row.requesting_area}</td><td>{row.office}</td><td>{row.topic}</td><td>{row.company}</td><td>{row.start_date || "—"}</td></tr>)}</tbody></table></div><div className="actions"><button className="primary" disabled={busy} onClick={() => void upload()}>{busy ? "Cargando…" : `Cargar ${rows.filter((r) => !known.has(r.source_row_hash)).length} filas nuevas`}</button></div></>}
-    <div className="batch-manager"><div className="panelhead"><div><h3>Bases cargadas por período</h3><p>Eliminar una base borra únicamente los registros asociados a ese lote.</p></div><button className="secondary danger" disabled={!records.length} onClick={() => void resetRecords()}>Resetear todas las bases</button></div><div className="table"><table><thead><tr><th>Período</th><th>Desde</th><th>Hasta</th><th>Archivo</th><th>Filas</th><th>Fecha de carga</th><th>Acción</th></tr></thead><tbody>{batches.map((batch) => <tr key={batch.id}><td><b>{batch.period_name}</b></td><td>{batch.period_start}</td><td>{batch.period_end}</td><td>{batch.source_filename}</td><td>{batch.row_count}</td><td>{new Date(batch.uploaded_at).toLocaleString("es-EC")}</td><td><button className="secondary danger" onClick={() => void deleteBatch(batch)}>Eliminar base</button></td></tr>)}{!batches.length && <tr><td colSpan={7}>No existen bases cargadas por período.</td></tr>}</tbody></table></div></div>
+    <div className="batch-manager"><div className="panelhead"><div><h3>Bases cargadas en {period.name}</h3><p>Eliminar una base borra únicamente los registros asociados a ese lote.</p></div><button className="secondary danger" disabled={!records.length} onClick={() => void resetRecords()}>Resetear bases del período</button></div><div className="table"><table><thead><tr><th>Período</th><th>Desde</th><th>Hasta</th><th>Archivo</th><th>Filas</th><th>Fecha de carga</th><th>Acción</th></tr></thead><tbody>{batches.map((batch) => <tr key={batch.id}><td><b>{batch.period_name}</b></td><td>{batch.period_start}</td><td>{batch.period_end}</td><td>{batch.source_filename}</td><td>{batch.row_count}</td><td>{new Date(batch.uploaded_at).toLocaleString("es-EC")}</td><td><button className="secondary danger" onClick={() => void deleteBatch(batch)}>Eliminar base</button></td></tr>)}{!batches.length && <tr><td colSpan={7}>No existen bases cargadas en este período.</td></tr>}</tbody></table></div></div>
   </div>;
 }
 
-function BudgetManager({ records, budgets, departments, year, setYear, reload }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; departments: string[]; year: number; setYear: (year: number) => void; reload: () => Promise<void> }) {
+function BudgetManager({ records, budgets, plans, departments, period, reload }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; plans: TrainingPlan[]; departments: string[]; period: { id: string; name: string; start_date: string }; reload: () => Promise<void> }) {
+  const year = Number(period.start_date.slice(0, 4));
   const [department, setDepartment] = useState("");
   const [crossOverride, setCrossOverride] = useState("");
-  const [allocated, setAllocated] = useState(0);
-  const [hours, setHours] = useState(0);
   const [message, setMessage] = useState("");
-  const [budgetDrafts, setBudgetDrafts] = useState<Record<string, { requesting_area_name: string; allocated_budget: number; bank_hours: number }>>({});
+  const [budgetDrafts, setBudgetDrafts] = useState<Record<string, { requesting_area_name: string }>>({});
   const [savingAll, setSavingAll] = useState(false);
   async function save(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase!.from("department_budgets").upsert({ year, department_name: department.trim(), requesting_area_name: crossOverride.trim() || null, allocated_budget: allocated, bank_hours: hours, updated_at: new Date().toISOString() }, { onConflict: "year,department_name" });
-    setMessage(error?.message ?? "Asignación guardada.");
-    if (!error) { setDepartment(""); setCrossOverride(""); setAllocated(0); setHours(0); await reload(); }
+    const { error } = await supabase!.from("department_budgets").upsert({ period_id: period.id, year, department_name: department.trim(), requesting_area_name: crossOverride.trim() || null, allocated_budget: 0, bank_hours: 0, updated_at: new Date().toISOString() }, { onConflict: "period_id,department_name" });
+    setMessage(error?.message ?? "Regla de cruce guardada.");
+    if (!error) { setDepartment(""); setCrossOverride(""); await reload(); }
   }
-  const budgetDraft = (budget: BudgetAllocation) => budgetDrafts[budget.id] ?? { requesting_area_name: budget.requesting_area_name || "", allocated_budget: Number(budget.allocated_budget), bank_hours: Number(budget.bank_hours) };
+  const budgetDraft = (budget: BudgetAllocation) => budgetDrafts[budget.id] ?? { requesting_area_name: budget.requesting_area_name || "" };
   function changeBudget(budget: BudgetAllocation, changes: Partial<ReturnType<typeof budgetDraft>>) {
     setBudgetDrafts((all) => ({ ...all, [budget.id]: { ...budgetDraft(budget), ...changes } }));
   }
@@ -436,39 +451,42 @@ function BudgetManager({ records, budgets, departments, year, setYear, reload }:
     const results = await Promise.all(entries.map(([id, values]) => supabase!.from("department_budgets").update({ ...values, requesting_area_name: values.requesting_area_name.trim() || null, updated_at: new Date().toISOString() }).eq("id", id)));
     setSavingAll(false);
     const error = results.find((result) => result.error)?.error;
-    setMessage(error?.message ?? `${entries.length} asignaciones fueron guardadas y recalculadas.`);
+    setMessage(error?.message ?? `${entries.length} reglas de cruce fueron guardadas y recalculadas.`);
     if (!error) {
       setBudgetDrafts({});
       await reload();
     }
   }
   async function remove(id: string) {
-    if (!window.confirm("¿Eliminar esta asignación?")) return;
+    if (!window.confirm("¿Eliminar esta regla de recategorización? El cruce volverá a ser automático por departamento.")) return;
     const { error } = await supabase!.from("department_budgets").delete().eq("id", id);
     setMessage(error?.message ?? "Asignación eliminada.");
     if (!error) await reload();
   }
+  const configured = budgets.filter((budget) => !budget.period_id || budget.period_id === period.id);
+  const plannedDepartments = [...new Set(plans.map((plan) => plan.department).filter(Boolean))];
+  const departmentOptions = [...new Set([...departments, ...plannedDepartments])].sort((a, b) => a.localeCompare(b, "es"));
   const requestingAreas = [...new Set(records.map((record) => record.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return <>
-    <div className="panel"><div className="panelhead"><div><h2>Asignación por departamento</h2><p>El cruce es automático. Use la recategorización únicamente cuando AREA REQUIRIENTE no corresponda al nombre del DEPARTAMENTO.</p></div><label>Año<input type="number" min="2020" max="2100" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label></div>
-      <form className="inline budget-form" onSubmit={save}><label>Departamento presupuestado<input list="budget-departments" value={department} onChange={(e) => setDepartment(e.target.value)} required /><datalist id="budget-departments">{departments.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>Recategorizar AREA REQUIRIENTE (opcional)<input list="requesting-areas" value={crossOverride} onChange={(e) => setCrossOverride(e.target.value)} placeholder="Vacío = cruce automático" /><datalist id="requesting-areas">{requestingAreas.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>Valor presupuestado USD<input type="number" min="0" step="0.01" value={allocated} onChange={(e) => setAllocated(Number(e.target.value))} required /></label><label>Horas presupuestadas<input type="number" min="0" step="0.01" value={hours} onChange={(e) => setHours(Number(e.target.value))} required /></label><button className="primary">Agregar asignación</button></form>{message && <div className="statusmsg">{message}</div>}
+    <div className="panel"><div className="panelhead"><div><h2>Reglas de cruce · {period.name}</h2><p>Los valores y horas presupuestadas se toman automáticamente del Módulo 1. Configure solo las excepciones de denominación.</p></div></div>
+      <form className="inline budget-form mapping-form" onSubmit={save}><label>DEPARTAMENTO del Módulo 1<input list="budget-departments" value={department} onChange={(e) => setDepartment(e.target.value)} required /><datalist id="budget-departments">{departmentOptions.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>AREA REQUIRIENTE alternativa del Excel<input list="requesting-areas" value={crossOverride} onChange={(e) => setCrossOverride(e.target.value)} placeholder="Vacío = cruce automático" /><datalist id="requesting-areas">{requestingAreas.map((x) => <option key={x}>{x}</option>)}</datalist></label><button className="primary">Guardar regla</button></form>{message && <div className="statusmsg">{message}</div>}
     </div>
-    <BudgetSummary records={records} budgets={budgets} year={year} />
-    <div className="panel"><div className="panelhead"><div><h2>Asignaciones configuradas</h2><p>Deje el cruce alternativo vacío para usar el departamento automáticamente, o seleccione una categoría diferente.</p></div><button className="primary" disabled={!Object.keys(budgetDrafts).length || savingAll} onClick={() => void saveBudgetChanges()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(budgetDrafts).length})`}</button></div><div className="table budget-editor"><table><thead><tr><th>Año</th><th>Departamento</th><th>Cruce alternativo con AREA REQUIRIENTE</th><th>Valor presupuestado</th><th>Horas presupuestadas</th><th>Acción</th></tr></thead><tbody>{budgets.map((b) => { const draft = budgetDraft(b); return <tr key={b.id}><td>{b.year}</td><td>{b.department_name}</td><td><input list="requesting-areas" value={draft.requesting_area_name} onChange={(e) => changeBudget(b, { requesting_area_name: e.target.value })} placeholder="Automático por departamento" /></td><td><input type="number" min="0" step="0.01" value={draft.allocated_budget} onChange={(e) => changeBudget(b, { allocated_budget: Number(e.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={draft.bank_hours} onChange={(e) => changeBudget(b, { bank_hours: Number(e.target.value) })} /></td><td><button className="secondary danger" onClick={() => void remove(b.id)}>Eliminar</button></td></tr>; })}</tbody></table></div></div>
+    <BudgetSummary records={records} budgets={budgets} plans={plans} periodName={period.name} />
+    <div className="panel"><div className="panelhead"><div><h2>Recategorizaciones configuradas</h2><p>Si elimina una regla, el sistema volverá a comparar los nombres automáticamente.</p></div><button className="primary" disabled={!Object.keys(budgetDrafts).length || savingAll} onClick={() => void saveBudgetChanges()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(budgetDrafts).length})`}</button></div><div className="table budget-editor"><table><thead><tr><th>Año</th><th>Departamento del sistema</th><th>AREA REQUIRIENTE alternativa</th><th>Acción</th></tr></thead><tbody>{configured.map((b) => { const draft = budgetDraft(b); return <tr key={b.id}><td>{b.year}</td><td>{b.department_name}</td><td><input list="requesting-areas" value={draft.requesting_area_name} onChange={(e) => changeBudget(b, { requesting_area_name: e.target.value })} placeholder="Automático por departamento" /></td><td><button className="secondary danger" onClick={() => void remove(b.id)}>Eliminar regla</button></td></tr>; })}{!configured.length && <tr><td colSpan={4}>No existen recategorizaciones. Todos los cruces son automáticos.</td></tr>}</tbody></table></div></div>
   </>;
 }
 
-function ExecutionDashboard({ records, budgets, year, setYear }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; year: number; setYear: (year: number) => void }) {
-  const annual = records.filter((r) => recordYear(r) === year);
+function ExecutionDashboard({ records, budgets, plans, periodName }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; plans: TrainingPlan[]; periodName: string }) {
+  const annual = records;
   const completed = annual.filter((r) => isCompleted(r.status));
   const participants = new Set(completed.map((r) => norm(r.name)).filter(Boolean)).size;
   const events = new Set(completed.map((r) => `${norm(r.topic)}|${r.start_date}|${norm(r.company)}`)).size;
   const cost = completed.reduce((s, r) => s + Number(r.cost), 0);
   const hours = completed.reduce((s, r) => s + Number(r.duration), 0);
   return <>
-    <div className="dashboard-toolbar"><label>Año analizado <input type="number" min="2020" max="2100" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label></div>
+    <div className="dashboard-toolbar"><b>Período analizado: {periodName}</b></div>
     <section className="cards strategic-cards"><Metric label="Participantes capacitados" value={participants.toLocaleString("es-EC")} /><Metric label="Eventos ejecutados" value={events.toLocaleString("es-EC")} /><Metric label="Inversión ejecutada" value={money(cost)} /><Metric label="Horas cumplidas" value={hours.toLocaleString("es-EC")} /><Metric label="Costo por participante" value={money(participants ? cost / participants : 0)} /><Metric label="Cobertura departamental" value={new Set(completed.map((r) => norm(r.requesting_area)).filter(Boolean)).size.toLocaleString("es-EC")} /></section>
-    <BudgetSummary records={records} budgets={budgets} year={year} />
+    <BudgetSummary records={records} budgets={budgets} plans={plans} periodName={periodName} />
     <section className="grid2"><Distribution title="Estado" records={annual} field="status" /><Distribution title="Modalidad" records={annual} field="modality" /><Distribution title="Área de conocimiento" records={annual} field="knowledge_area" /><Distribution title="Área requiriente" records={annual} field="requesting_area" /></section>
   </>;
 }
@@ -479,7 +497,7 @@ function Distribution({ title, records, field }: { title: string; records: Train
   return <div className="panel"><h2>{title}</h2><div className="bars">{groups.length ? groups.map(([label, count]) => <div key={label}><span title={label}>{label}</span><i><em style={{ width: `${(count / max) * 100}%` }} /></i><b>{count}</b></div>) : <p>Sin registros para el año seleccionado.</p>}</div></div>;
 }
 
-function ExecutionReport({ records, batches }: { records: TrainingRecord[]; batches: ImportBatch[] }) {
+function ExecutionReport({ records, batches, periodName }: { records: TrainingRecord[]; batches: ImportBatch[]; periodName: string }) {
   const [filters, setFilters] = useState({ batch: "", year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" });
   const values = (field: keyof TrainingRecord) => [...new Set(records.map((r) => String(r[field] || "")).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const filtered = records.filter((r) => (!filters.batch || r.import_batch_id === filters.batch) && (!filters.year || String(recordYear(r)) === filters.year) && (!filters.from || (r.start_date ?? "") >= filters.from) && (!filters.to || (r.start_date ?? "") <= filters.to) && (!filters.gender || r.gender === filters.gender) && (!filters.requesting_area || r.requesting_area === filters.requesting_area) && (!filters.office || r.office === filters.office) && (!filters.status || r.status === filters.status) && (!filters.modality || r.modality === filters.modality) && (!filters.department || r.department === filters.department) && (!filters.occupational_group || r.occupational_group === filters.occupational_group) && (!filters.knowledge_area || r.knowledge_area === filters.knowledge_area));
@@ -494,7 +512,8 @@ function ExecutionReport({ records, batches }: { records: TrainingRecord[]; batc
     sheet.getRow(1).font = { bold: true };
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.columns.forEach((column, index) => { column.width = Math.max(14, TRAINING_HEADERS[index].length + 2); });
-    await saveWorkbook(workbook, `reporte_capacitacion_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const periodLabel = periodName.replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]+/g, "-").replace(/^-|-$/g, "");
+    await saveWorkbook(workbook, `reporte_capacitacion_${periodLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
   return <><div className="panel filters execution-filters"><label>Base / período<select value={filters.batch} onChange={(e) => set("batch", e.target.value)}><option value="">Todas</option>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.period_name} — {batch.source_filename}</option>)}</select></label><label>Año<input type="number" min="2020" max="2100" value={filters.year} onChange={(e) => set("year", e.target.value)} /></label><label>Desde<input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} /></label><label>Hasta<input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} /></label>{(["gender", "requesting_area", "office", "status", "modality", "department", "occupational_group", "knowledge_area"] as const).map((field) => <label key={field}>{field === "requesting_area" ? "Área requiriente" : field === "occupational_group" ? "Grupo ocupacional" : field === "knowledge_area" ? "Área de conocimiento" : field.charAt(0).toUpperCase() + field.slice(1)}<select value={filters[field]} onChange={(e) => set(field, e.target.value)}><option value="">Todos</option>{values(field).map((value) => <option key={value}>{value}</option>)}</select></label>)}<button className="secondary" onClick={() => setFilters({ batch: "", year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" })}>Limpiar</button></div>
     <section className="cards"><Metric label="Registros filtrados" value={filtered.length.toLocaleString("es-EC")} /><Metric label="Personas únicas" value={new Set(filtered.map((r) => norm(r.name))).size.toLocaleString("es-EC")} /><Metric label="Costo" value={money(filtered.reduce((s, r) => s + Number(r.cost), 0))} /><Metric label="Duración" value={filtered.reduce((s, r) => s + Number(r.duration), 0).toLocaleString("es-EC")} /></section>
