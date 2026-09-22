@@ -28,6 +28,18 @@ export type TrainingRecord = {
   source_row_hash: string;
   uploaded_at: string;
   uploaded_by: string;
+  import_batch_id: string | null;
+};
+
+export type ImportBatch = {
+  id: string;
+  period_name: string;
+  period_start: string;
+  period_end: string;
+  source_filename: string;
+  row_count: number;
+  uploaded_at: string;
+  uploaded_by: string;
 };
 
 export type BudgetAllocation = {
@@ -211,11 +223,13 @@ function Metric({ label, value }: { label: string; value: string }) {
 export function TrainingExecutionModule({
   records,
   budgets,
+  batches,
   departments,
   reload,
 }: {
   records: TrainingRecord[];
   budgets: BudgetAllocation[];
+  batches: ImportBatch[];
   departments: string[];
   reload: () => Promise<void>;
 }) {
@@ -231,16 +245,19 @@ export function TrainingExecutionModule({
         </div>
       </div>
       {section === "dashboard" && <ExecutionDashboard records={records} budgets={budgets} year={year} setYear={setYear} />}
-      {section === "import" && <ExcelImporter records={records} reload={reload} />}
+      {section === "import" && <ExcelImporter records={records} batches={batches} reload={reload} />}
       {section === "budget" && <BudgetManager records={records} budgets={budgets} departments={departments} year={year} setYear={setYear} reload={reload} />}
-      {section === "report" && <ExecutionReport records={records} />}
+      {section === "report" && <ExecutionReport records={records} batches={batches} />}
     </>
   );
 }
 
-function ExcelImporter({ records, reload }: { records: TrainingRecord[]; reload: () => Promise<void> }) {
-  const [rows, setRows] = useState<Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by">[]>([]);
+function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]; batches: ImportBatch[]; reload: () => Promise<void> }) {
+  const [rows, setRows] = useState<Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[]>([]);
   const [filename, setFilename] = useState("");
+  const [periodName, setPeriodName] = useState(String(new Date().getFullYear()));
+  const [periodStart, setPeriodStart] = useState(`${new Date().getFullYear()}-01-01`);
+  const [periodEnd, setPeriodEnd] = useState(`${new Date().getFullYear()}-12-31`);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const known = useMemo(() => new Set(records.map((r) => r.source_row_hash)), [records]);
@@ -261,7 +278,7 @@ function ExcelImporter({ records, reload }: { records: TrainingRecord[]; reload:
       const positions = TRAINING_HEADERS.map((header) => actual.indexOf(norm(header)));
       const missing = TRAINING_HEADERS.filter((_, index) => positions[index] < 0);
       if (missing.length) throw new Error(`Faltan cabeceras obligatorias: ${missing.join(", ")}.`);
-      const parsed = [] as Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by">[];
+      const parsed = [] as Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[];
       for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
         const row = sheet.getRow(rowNumber);
         const original = TRAINING_HEADERS.map((_, index) => excelValue(row.getCell(positions[index] + 1).value));
@@ -284,21 +301,70 @@ function ExcelImporter({ records, reload }: { records: TrainingRecord[]; reload:
 
   async function upload() {
     if (!rows.length) return;
+    if (!periodName.trim() || !periodStart || !periodEnd || periodEnd < periodStart) {
+      setMessage("Defina un nombre y un rango válido para el período.");
+      return;
+    }
+    const outside = rows.filter((row) => row.start_date && (row.start_date < periodStart || row.start_date > periodEnd));
+    if (outside.length) {
+      setMessage(`${outside.length} filas tienen FECHA INICIO fuera del período ${periodStart} a ${periodEnd}. Corrija el archivo o el período.`);
+      return;
+    }
     setBusy(true);
     const { data } = await supabase!.auth.getUser();
     const fresh = rows.filter((row) => !known.has(row.source_row_hash)).map((row) => ({ ...row, uploaded_by: data.user?.id }));
+    if (!fresh.length) {
+      setBusy(false);
+      setMessage("Todas las filas ya existen; no se creó una base nueva.");
+      return;
+    }
+    const { data: batch, error: batchError } = await supabase!
+      .from("training_import_batches")
+      .insert({ period_name: periodName.trim(), period_start: periodStart, period_end: periodEnd, source_filename: filename, row_count: fresh.length, uploaded_by: data.user?.id })
+      .select("id")
+      .single();
+    if (batchError || !batch) {
+      setBusy(false);
+      setMessage(batchError?.message ?? "No fue posible crear el período de carga.");
+      return;
+    }
     let errorMessage = "";
     for (let index = 0; index < fresh.length; index += 400) {
-      const { error } = await supabase!.from("training_records").upsert(fresh.slice(index, index + 400), { onConflict: "source_row_hash", ignoreDuplicates: true });
+      const payload = fresh.slice(index, index + 400).map((row) => ({ ...row, import_batch_id: batch.id }));
+      const { error } = await supabase!.from("training_records").upsert(payload, { onConflict: "source_row_hash", ignoreDuplicates: true });
       if (error) { errorMessage = error.message; break; }
     }
     setBusy(false);
-    if (errorMessage) setMessage(errorMessage);
+    if (errorMessage) {
+      await supabase!.from("training_import_batches").delete().eq("id", batch.id);
+      setMessage(errorMessage);
+    }
     else {
-      setMessage(`Carga completada: ${fresh.length} filas nuevas; ${rows.length - fresh.length} duplicadas omitidas.`);
+      setMessage(`Base “${periodName.trim()}” cargada: ${fresh.length} filas nuevas; ${rows.length - fresh.length} duplicadas omitidas.`);
       setRows([]);
       await reload();
     }
+  }
+
+  async function deleteBatch(batch: ImportBatch) {
+    if (!window.confirm(`¿Eliminar la base “${batch.period_name}” (${batch.source_filename}) y todos sus ${batch.row_count} registros? La acción quedará auditada.`)) return;
+    const { error } = await supabase!.from("training_import_batches").delete().eq("id", batch.id);
+    setMessage(error?.message ?? "Base eliminada correctamente.");
+    if (!error) await reload();
+  }
+
+  async function resetRecords() {
+    const confirmation = window.prompt("Esta acción eliminará TODAS las bases de capacitación ejecutada. Escriba RESETEAR para confirmar. Los presupuestos se conservarán.");
+    if (confirmation !== "RESETEAR") {
+      setMessage("Reseteo cancelado.");
+      return;
+    }
+    const { error } = await supabase!.from("training_import_batches").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+    if (!error) {
+      const { error: legacyError } = await supabase!.from("training_records").delete().is("import_batch_id", null);
+      setMessage(legacyError?.message ?? "Todas las bases ejecutadas fueron eliminadas. Los presupuestos permanecen intactos.");
+      if (!legacyError) await reload();
+    } else setMessage(error.message);
   }
 
   async function template() {
@@ -313,9 +379,11 @@ function ExcelImporter({ records, reload }: { records: TrainingRecord[]; reload:
 
   return <div className="panel">
     <div className="panelhead"><div><h2>Carga masiva desde Excel</h2><p>Solo se procesa la primera hoja. Las 20 cabeceras son obligatorias; se omiten filas duplicadas.</p></div><button className="secondary" onClick={() => void template()}>Descargar plantilla</button></div>
+    <div className="period-fields"><label>Nombre del período<input value={periodName} onChange={(e) => setPeriodName(e.target.value)} placeholder="Ej. Plan 2026 / Primer semestre" required /></label><label>Desde<input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} required /></label><label>Hasta<input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} required /></label></div>
     <label className="upload-box"><b>Seleccione archivo Excel .xlsx</b><input type="file" accept=".xlsx" onChange={(e) => void readFile(e.target.files?.[0])} /><span>{filename || "Ningún archivo seleccionado"}</span></label>
     {message && <div className={rows.length ? "success" : "error"}>{message}</div>}
     {rows.length > 0 && <><div className="table preview"><table><thead><tr>{TRAINING_HEADERS.slice(0, 8).map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.slice(0, 8).map((row) => <tr key={row.source_row_hash}><td>{row.name}</td><td>{row.gender}</td><td>{row.position}</td><td>{row.requesting_area}</td><td>{row.office}</td><td>{row.topic}</td><td>{row.company}</td><td>{row.start_date || "—"}</td></tr>)}</tbody></table></div><div className="actions"><button className="primary" disabled={busy} onClick={() => void upload()}>{busy ? "Cargando…" : `Cargar ${rows.filter((r) => !known.has(r.source_row_hash)).length} filas nuevas`}</button></div></>}
+    <div className="batch-manager"><div className="panelhead"><div><h3>Bases cargadas por período</h3><p>Eliminar una base borra únicamente los registros asociados a ese lote.</p></div><button className="secondary danger" disabled={!records.length} onClick={() => void resetRecords()}>Resetear todas las bases</button></div><div className="table"><table><thead><tr><th>Período</th><th>Desde</th><th>Hasta</th><th>Archivo</th><th>Filas</th><th>Fecha de carga</th><th>Acción</th></tr></thead><tbody>{batches.map((batch) => <tr key={batch.id}><td><b>{batch.period_name}</b></td><td>{batch.period_start}</td><td>{batch.period_end}</td><td>{batch.source_filename}</td><td>{batch.row_count}</td><td>{new Date(batch.uploaded_at).toLocaleString("es-EC")}</td><td><button className="secondary danger" onClick={() => void deleteBatch(batch)}>Eliminar base</button></td></tr>)}{!batches.length && <tr><td colSpan={7}>No existen bases cargadas por período.</td></tr>}</tbody></table></div></div>
   </div>;
 }
 
@@ -367,10 +435,10 @@ function Distribution({ title, records, field }: { title: string; records: Train
   return <div className="panel"><h2>{title}</h2><div className="bars">{groups.length ? groups.map(([label, count]) => <div key={label}><span title={label}>{label}</span><i><em style={{ width: `${(count / max) * 100}%` }} /></i><b>{count}</b></div>) : <p>Sin registros para el año seleccionado.</p>}</div></div>;
 }
 
-function ExecutionReport({ records }: { records: TrainingRecord[] }) {
-  const [filters, setFilters] = useState({ year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" });
+function ExecutionReport({ records, batches }: { records: TrainingRecord[]; batches: ImportBatch[] }) {
+  const [filters, setFilters] = useState({ batch: "", year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" });
   const values = (field: keyof TrainingRecord) => [...new Set(records.map((r) => String(r[field] || "")).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
-  const filtered = records.filter((r) => (!filters.year || String(recordYear(r)) === filters.year) && (!filters.from || (r.start_date ?? "") >= filters.from) && (!filters.to || (r.start_date ?? "") <= filters.to) && (!filters.gender || r.gender === filters.gender) && (!filters.requesting_area || r.requesting_area === filters.requesting_area) && (!filters.office || r.office === filters.office) && (!filters.status || r.status === filters.status) && (!filters.modality || r.modality === filters.modality) && (!filters.department || r.department === filters.department) && (!filters.occupational_group || r.occupational_group === filters.occupational_group) && (!filters.knowledge_area || r.knowledge_area === filters.knowledge_area));
+  const filtered = records.filter((r) => (!filters.batch || r.import_batch_id === filters.batch) && (!filters.year || String(recordYear(r)) === filters.year) && (!filters.from || (r.start_date ?? "") >= filters.from) && (!filters.to || (r.start_date ?? "") <= filters.to) && (!filters.gender || r.gender === filters.gender) && (!filters.requesting_area || r.requesting_area === filters.requesting_area) && (!filters.office || r.office === filters.office) && (!filters.status || r.status === filters.status) && (!filters.modality || r.modality === filters.modality) && (!filters.department || r.department === filters.department) && (!filters.occupational_group || r.occupational_group === filters.occupational_group) && (!filters.knowledge_area || r.knowledge_area === filters.knowledge_area));
   const set = (field: keyof typeof filters, value: string) => setFilters((current) => ({ ...current, [field]: value }));
   async function exportExcel() {
     const data = filtered.map((r) => ({ NOMBRE: r.name, GENERO: r.gender, CARGO: r.position, "AREA REQUIRIENTE": r.requesting_area, OFICINA: r.office, TEMA: r.topic, EMPRESA: r.company, "FECHA INICIO": r.start_date, "FECHA FIN": r.end_date, DURACION: r.duration, LUGAR: r.location, COSTO: r.cost, ESTADO: r.status, "CRITERIO JUSTIFICACION": r.justification_criterion, MODALIDAD: r.modality, "ÁREA": r.area, DEPARTAMENTO: r.department, NIVEL: r.level, "GRUPO OCUPACIONAL": r.occupational_group, "ÁREA DE CONOCIMIENTO": r.knowledge_area }));
@@ -384,7 +452,7 @@ function ExecutionReport({ records }: { records: TrainingRecord[] }) {
     sheet.columns.forEach((column, index) => { column.width = Math.max(14, TRAINING_HEADERS[index].length + 2); });
     await saveWorkbook(workbook, `reporte_capacitacion_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
-  return <><div className="panel filters execution-filters"><label>Año<input type="number" min="2020" max="2100" value={filters.year} onChange={(e) => set("year", e.target.value)} /></label><label>Desde<input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} /></label><label>Hasta<input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} /></label>{(["gender", "requesting_area", "office", "status", "modality", "department", "occupational_group", "knowledge_area"] as const).map((field) => <label key={field}>{field === "requesting_area" ? "Área requiriente" : field === "occupational_group" ? "Grupo ocupacional" : field === "knowledge_area" ? "Área de conocimiento" : field.charAt(0).toUpperCase() + field.slice(1)}<select value={filters[field]} onChange={(e) => set(field, e.target.value)}><option value="">Todos</option>{values(field).map((value) => <option key={value}>{value}</option>)}</select></label>)}<button className="secondary" onClick={() => setFilters({ year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" })}>Limpiar</button></div>
+  return <><div className="panel filters execution-filters"><label>Base / período<select value={filters.batch} onChange={(e) => set("batch", e.target.value)}><option value="">Todas</option>{batches.map((batch) => <option key={batch.id} value={batch.id}>{batch.period_name} — {batch.source_filename}</option>)}</select></label><label>Año<input type="number" min="2020" max="2100" value={filters.year} onChange={(e) => set("year", e.target.value)} /></label><label>Desde<input type="date" value={filters.from} onChange={(e) => set("from", e.target.value)} /></label><label>Hasta<input type="date" value={filters.to} onChange={(e) => set("to", e.target.value)} /></label>{(["gender", "requesting_area", "office", "status", "modality", "department", "occupational_group", "knowledge_area"] as const).map((field) => <label key={field}>{field === "requesting_area" ? "Área requiriente" : field === "occupational_group" ? "Grupo ocupacional" : field === "knowledge_area" ? "Área de conocimiento" : field.charAt(0).toUpperCase() + field.slice(1)}<select value={filters[field]} onChange={(e) => set(field, e.target.value)}><option value="">Todos</option>{values(field).map((value) => <option key={value}>{value}</option>)}</select></label>)}<button className="secondary" onClick={() => setFilters({ batch: "", year: "", from: "", to: "", gender: "", requesting_area: "", office: "", status: "", modality: "", department: "", occupational_group: "", knowledge_area: "" })}>Limpiar</button></div>
     <section className="cards"><Metric label="Registros filtrados" value={filtered.length.toLocaleString("es-EC")} /><Metric label="Personas únicas" value={new Set(filtered.map((r) => norm(r.name))).size.toLocaleString("es-EC")} /><Metric label="Costo" value={money(filtered.reduce((s, r) => s + Number(r.cost), 0))} /><Metric label="Duración" value={filtered.reduce((s, r) => s + Number(r.duration), 0).toLocaleString("es-EC")} /></section>
     <div className="panel"><div className="panelhead"><div><h2>Reporte detallado</h2><p>{filtered.length} registros con las 20 columnas de la base fuente.</p></div><div><button className="secondary" onClick={() => window.print()}>Imprimir / PDF</button> <button className="primary" onClick={() => void exportExcel()}>Exportar Excel</button></div></div><div className="table execution-table"><table><thead><tr>{TRAINING_HEADERS.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{filtered.map((r) => <tr key={r.id}><td>{r.name}</td><td>{r.gender}</td><td>{r.position}</td><td>{r.requesting_area}</td><td>{r.office}</td><td>{r.topic}</td><td>{r.company}</td><td>{r.start_date}</td><td>{r.end_date}</td><td>{r.duration}</td><td>{r.location}</td><td>{money(r.cost)}</td><td>{r.status}</td><td>{r.justification_criterion}</td><td>{r.modality}</td><td>{r.area}</td><td>{r.department}</td><td>{r.level}</td><td>{r.occupational_group}</td><td>{r.knowledge_area}</td></tr>)}</tbody></table></div></div></>;
 }
