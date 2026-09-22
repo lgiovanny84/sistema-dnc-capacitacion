@@ -480,6 +480,12 @@ button.secondary,
   border: 1px solid #e1e6ed;
   border-radius: 20px;
 }
+.catalog-item input {
+  width: 180px;
+  border: 0;
+  background: transparent;
+  padding: 6px 8px;
+}
 .mini-action {
   border: 0;
   background: transparent;
@@ -716,8 +722,14 @@ footer {
   max-height: 340px;
 }
 .budget-form {
-  grid-template-columns: minmax(240px, 2fr) 1fr 1fr auto;
+  grid-template-columns: repeat(2, minmax(220px, 2fr)) repeat(2, 1fr) auto;
   align-items: end;
+}
+.budget-editor input {
+  min-width: 150px;
+}
+.budget-warning p {
+  margin: 4px 0 0;
 }
 .execution-filters {
   display: grid;

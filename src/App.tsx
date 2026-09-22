@@ -1496,6 +1496,10 @@ function Admin({
     [fullName, setFullName] = useState(""),
     [newRole, setNewRole] = useState<Role>("user"),
     [editingUser, setEditingUser] = useState<Profile | null>(null),
+    [userDrafts, setUserDrafts] = useState<Record<string, Partial<Profile>>>({}),
+    [catalogDrafts, setCatalogDrafts] = useState<Record<string, { name: string; active: boolean }>>({}),
+    [savingUsers, setSavingUsers] = useState(false),
+    [savingCatalogs, setSavingCatalogs] = useState(false),
     [sending, setSending] = useState(false);
   useEffect(() => {
     void loadUsers();
@@ -1519,23 +1523,24 @@ function Admin({
       await reload();
     }
   }
-  async function toggle(c: Catalog) {
-    const { error } = await supabase!
-      .from("catalogs")
-      .update({ active: !c.active })
-      .eq("id", c.id);
-    if (error) setMsg(error.message);
-    else await reload();
+  const catalogDraft = (catalog: Catalog) => catalogDrafts[catalog.id] ?? { name: catalog.name, active: catalog.active };
+  function changeCatalog(catalog: Catalog, changes: Partial<{ name: string; active: boolean }>) {
+    setCatalogDrafts((all) => ({ ...all, [catalog.id]: { ...catalogDraft(catalog), ...changes } }));
   }
-  async function renameCatalog(c: Catalog) {
-    const value = window.prompt("Nuevo nombre", c.name)?.trim();
-    if (!value || value === c.name) return;
-    const { error } = await supabase!
-      .from("catalogs")
-      .update({ name: value })
-      .eq("id", c.id);
-    setMsg(error?.message ?? "Elemento actualizado.");
-    if (!error) await reload();
+  async function saveCatalogChanges() {
+    const entries = Object.entries(catalogDrafts);
+    if (!entries.length) return;
+    setSavingCatalogs(true);
+    const results = await Promise.all(entries.map(([id, values]) =>
+      supabase!.from("catalogs").update({ name: values.name.trim(), active: values.active }).eq("id", id),
+    ));
+    setSavingCatalogs(false);
+    const error = results.find((result) => result.error)?.error;
+    setMsg(error?.message ?? `${entries.length} elementos del catálogo fueron guardados.`);
+    if (!error) {
+      setCatalogDrafts({});
+      await reload();
+    }
   }
   async function deleteCatalog(c: Catalog) {
     if (!window.confirm(`¿Eliminar definitivamente “${c.name}”?`)) return;
@@ -1575,13 +1580,24 @@ function Admin({
       setTimeout(() => void loadUsers(), 1200);
     }
   }
-  async function updateUser(id: string, changes: Partial<Profile>) {
-    const { error } = await supabase!
-      .from("profiles")
-      .update(changes)
-      .eq("id", id);
-    if (error) setMsg(error.message);
-    else await loadUsers();
+  const userDraft = (user: Profile) => userDrafts[user.id] ?? {};
+  function changeUser(user: Profile, changes: Partial<Profile>) {
+    setUserDrafts((all) => ({ ...all, [user.id]: { ...userDraft(user), ...changes } }));
+  }
+  async function saveUserChanges() {
+    const entries = Object.entries(userDrafts);
+    if (!entries.length) return;
+    setSavingUsers(true);
+    const results = await Promise.all(entries.map(([id, changes]) =>
+      supabase!.from("profiles").update({ ...changes, profile_updated_at: new Date().toISOString() }).eq("id", id),
+    ));
+    setSavingUsers(false);
+    const error = results.find((result) => result.error)?.error;
+    setMsg(error?.message ?? `${entries.length} usuarios fueron actualizados.`);
+    if (!error) {
+      setUserDrafts({});
+      await loadUsers();
+    }
   }
   return (
     <>
@@ -1600,11 +1616,7 @@ function Admin({
         />
       )}
       <div className="panel">
-        <h2>Usuarios y accesos</h2>
-        <p>
-          Invite usuarios, asigne el rol mínimo necesario y desactive accesos
-          que ya no correspondan.
-        </p>
+        <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Modifique varios usuarios y guarde toda la sección en una sola acción.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
         <form className="userform" onSubmit={invite}>
           <Input
             label="Nombre completo"
@@ -1651,10 +1663,8 @@ function Admin({
                   <td>{user.email}</td>
                   <td>
                     <select
-                      value={user.role}
-                      onChange={(e) =>
-                        updateUser(user.id, { role: e.target.value as Role })
-                      }
+                      value={(userDraft(user).role as Role | undefined) ?? user.role}
+                      onChange={(e) => changeUser(user, { role: e.target.value as Role })}
                     >
                       <option value="user">Usuario</option>
                       <option value="admin">Administrador</option>
@@ -1662,12 +1672,10 @@ function Admin({
                   </td>
                   <td>
                     <button
-                      className={user.active ? "tag" : "tag off"}
-                      onClick={() =>
-                        updateUser(user.id, { active: !user.active })
-                      }
+                      className={((userDraft(user).active as boolean | undefined) ?? user.active) ? "tag" : "tag off"}
+                      onClick={() => changeUser(user, { active: !((userDraft(user).active as boolean | undefined) ?? user.active) })}
                     >
-                      {user.active ? "Activo" : "Inactivo"}
+                      {((userDraft(user).active as boolean | undefined) ?? user.active) ? "Activo" : "Inactivo"}
                     </button>
                   </td>
                   <td>
@@ -1675,11 +1683,11 @@ function Admin({
                       <span>Toda la organización</span>
                     ) : (
                       <select
-                        value={user.can_view_entire_area ? "area" : "department"}
+                        value={((userDraft(user).can_view_entire_area as boolean | undefined) ?? user.can_view_entire_area) ? "area" : "department"}
                         disabled={!user.onboarding_completed_at}
                         title={!user.onboarding_completed_at ? "El usuario debe completar primero su perfil" : undefined}
                         onChange={(e) =>
-                          updateUser(user.id, {
+                          changeUser(user, {
                             can_view_entire_area: e.target.value === "area",
                           })
                         }
@@ -1725,7 +1733,7 @@ function Admin({
         </form>
       </div>
       <div className="panel catalog">
-        <h2>Elementos configurados</h2>
+        <div className="panelhead"><div><h2>Elementos configurados</h2><p>Edite nombres o estados y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(catalogDrafts).length || savingCatalogs} onClick={() => void saveCatalogChanges()}>{savingCatalogs ? "Guardando…" : `Guardar todos los cambios (${Object.keys(catalogDrafts).length})`}</button></div>
         {Object.entries(kinds).map(([k, label]) => (
           <div key={k}>
             <h3>{label}</h3>
@@ -1734,10 +1742,10 @@ function Admin({
                 .filter((c) => c.kind === k)
                 .map((c) => (
                   <span className="catalog-item" key={c.id}>
-                    <button onClick={() => toggle(c)} className={c.active ? "tag" : "tag off"}>
-                      {c.name}
+                    <input value={catalogDraft(c).name} onChange={(e) => changeCatalog(c, { name: e.target.value })} aria-label={`Nombre de ${c.name}`} />
+                    <button onClick={() => changeCatalog(c, { active: !catalogDraft(c).active })} className={catalogDraft(c).active ? "tag" : "tag off"}>
+                      {catalogDraft(c).active ? "Activo" : "Inactivo"}
                     </button>
-                    <button className="mini-action" onClick={() => renameCatalog(c)}>Editar</button>
                     <button className="mini-action danger" onClick={() => deleteCatalog(c)}>Eliminar</button>
                   </span>
                 ))}
@@ -1942,7 +1950,9 @@ function AdminUserEditor({
 }
 
 function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<void> }) {
-  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_date: string; quarter: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_date: string; quarter: string }>>({}),
+    [savingAll, setSavingAll] = useState(false),
+    [message, setMessage] = useState("");
   const draft = (n: Need) => drafts[n.id] ?? {
     competency: n.competency,
     estimated_cost: Number(n.estimated_cost),
@@ -1956,17 +1966,18 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
     const month = value ? Number(value.slice(5, 7)) : 0;
     change(n, { planned_date: value, quarter: month ? `Q${Math.ceil(month / 3)}` : draft(n).quarter });
   }
-  async function save(n: Need) {
-    const d = draft(n);
-    const { error } = await supabase!.from("training_needs").update({
-      competency: d.competency.trim(),
-      estimated_cost: d.estimated_cost,
-      planned_date: d.planned_date || null,
-      quarter: d.quarter,
-    }).eq("id", n.id);
-    if (error) window.alert(error.message);
-    else {
-      setDrafts((all) => { const next = { ...all }; delete next[n.id]; return next; });
+  async function saveAll() {
+    const entries = Object.entries(drafts);
+    if (!entries.length) return;
+    setSavingAll(true);
+    const results = await Promise.all(entries.map(([id, d]) =>
+      supabase!.from("training_needs").update({ competency: d.competency.trim(), estimated_cost: d.estimated_cost, planned_date: d.planned_date || null, quarter: d.quarter }).eq("id", id),
+    ));
+    setSavingAll(false);
+    const error = results.find((result) => result.error)?.error;
+    setMessage(error?.message ?? `${entries.length} necesidades fueron guardadas correctamente.`);
+    if (!error) {
+      setDrafts({});
       await reload();
     }
   }
@@ -1978,8 +1989,8 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
   }
   return (
     <div className="panel">
-      <h2>Temas y presupuesto</h2>
-      <p>Edite el tema, la fecha y el presupuesto. El trimestre se calcula automáticamente.</p>
+      <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
+      {message && <div className="statusmsg">{message}</div>}
       <div className="table admin-needs"><table>
         <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
@@ -1991,7 +2002,7 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
             <td><input type="date" value={d.planned_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
             <td>{d.quarter}</td>
             <td><input type="number" min="0" step="0.01" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: Number(e.target.value) })} /></td>
-            <td className="row-actions"><button className="primary" onClick={() => save(n)}>Guardar</button><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
+            <td className="row-actions"><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
           </tr>;
         })}</tbody>
       </table></div>
