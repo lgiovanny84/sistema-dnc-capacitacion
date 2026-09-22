@@ -1,6 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { configured, supabase } from "./supabase";
+import {
+  BudgetAllocation,
+  BudgetSummary,
+  TrainingExecutionModule,
+  TrainingRecord,
+} from "./trainingExecution";
 type Role = "admin" | "user";
 type Need = {
   id: string;
@@ -121,6 +127,8 @@ export default function App() {
     [needs, setNeeds] = useState<Need[]>([]),
     [catalogs, setCatalogs] = useState<Catalog[]>(fallback),
     [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]),
+    [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]),
+    [budgetAllocations, setBudgetAllocations] = useState<BudgetAllocation[]>([]),
     [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
     [notice, setNotice] = useState(""),
@@ -183,6 +191,22 @@ export default function App() {
     setRole((p?.role as Role) || "user");
     setProfile((p as Profile) ?? null);
     setOrgUnits((o ?? []) as OrgUnit[]);
+    if (p?.role === "admin") {
+      const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }] =
+        await Promise.all([
+          supabase!.from("training_records").select("*").order("start_date", { ascending: false }),
+          supabase!.from("department_budgets").select("*").order("year", { ascending: false }).order("department_name"),
+        ]);
+      if (executedError || allocationsError) {
+        setNotice(`No fue posible cargar la ejecución de capacitación: ${(executedError || allocationsError)?.message}`);
+      } else {
+        setTrainingRecords((executed ?? []) as TrainingRecord[]);
+        setBudgetAllocations((allocations ?? []) as BudgetAllocation[]);
+      }
+    } else {
+      setTrainingRecords([]);
+      setBudgetAllocations([]);
+    }
     setLoading(false);
   }
   if (!configured) return <Setup />;
@@ -271,6 +295,7 @@ export default function App() {
             ["new", "Nueva necesidad"],
             ["list", "Necesidades"],
             ["reports", "Reportes"],
+            ...(role === "admin" ? [["execution", "Ejecución y KPIs"]] : []),
             ...(role === "admin" ? [["admin", "Administración"]] : []),
           ].map(([id, label]) => (
             <button
@@ -308,6 +333,8 @@ export default function App() {
                     ? "Gestión de necesidades"
                     : tab === "reports"
                       ? "Reportes y análisis"
+                      : tab === "execution"
+                        ? "Capacitación ejecutada"
                       : "Administración"}
             </h1>
           </div>
@@ -322,7 +349,14 @@ export default function App() {
         {loading ? (
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
-          <Dashboard needs={needs} totalHours={totalHours} budget={budget} />
+          <Dashboard
+            needs={needs}
+            totalHours={totalHours}
+            budget={budget}
+            role={role}
+            trainingRecords={trainingRecords}
+            budgetAllocations={budgetAllocations}
+          />
         ) : tab === "new" ? (
           <NeedForm
             catalogs={catalogs}
@@ -353,6 +387,13 @@ export default function App() {
             totalHours={totalHours}
             budget={budget}
             exportCSV={exportCSV}
+          />
+        ) : tab === "execution" && role === "admin" ? (
+          <TrainingExecutionModule
+            records={trainingRecords}
+            budgets={budgetAllocations}
+            departments={unique(orgUnits.map((unit) => unit.department_name))}
+            reload={load}
           />
         ) : (
           <Admin catalogs={catalogs} orgUnits={orgUnits} needs={needs} reload={load} />
@@ -610,11 +651,18 @@ function Dashboard({
   needs,
   totalHours,
   budget,
+  role,
+  trainingRecords,
+  budgetAllocations,
 }: {
   needs: Need[];
   totalHours: number;
   budget: number;
+  role: Role;
+  trainingRecords: TrainingRecord[];
+  budgetAllocations: BudgetAllocation[];
 }) {
+  const currentYear = new Date().getFullYear();
   return (
     <>
       <section className="cards">
@@ -632,6 +680,9 @@ function Dashboard({
           })}
         />
       </section>
+      {role === "admin" && (
+        <BudgetSummary records={trainingRecords} budgets={budgetAllocations} year={currentYear} />
+      )}
       <section className="grid2">
         <div className="panel">
           <h2>Distribución por factor</h2>
@@ -909,7 +960,7 @@ function NeedForm({
           required
         />
         <Input
-          label="Brecha identificada"
+          label="Brecha identificada / Necesidad identificada"
           value={f.gap}
           onChange={(v) => set("gap", v)}
           required
