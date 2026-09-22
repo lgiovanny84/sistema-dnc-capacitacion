@@ -731,6 +731,15 @@ footer {
 .budget-warning p {
   margin: 4px 0 0;
 }
+.cross-mode {
+  display: block;
+  margin-top: 4px;
+  color: #2f7652;
+  font-weight: 600;
+}
+.cross-mode.override {
+  color: #9a6112;
+}
 .execution-filters {
   display: grid;
   grid-template-columns: repeat(4, minmax(150px, 1fr));
