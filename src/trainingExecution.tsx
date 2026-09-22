@@ -46,6 +46,7 @@ export type BudgetAllocation = {
   id: string;
   year: number;
   department_name: string;
+  requesting_area_name: string | null;
   allocated_budget: number;
   bank_hours: number;
   created_at: string;
@@ -174,9 +175,9 @@ function recordYear(record: TrainingRecord) {
   return Number(record.start_date?.slice(0, 4) || 0);
 }
 
-function usedForDepartment(records: TrainingRecord[], department: string, year: number) {
+function usedForDepartment(records: TrainingRecord[], requestingArea: string, year: number) {
   return records.filter(
-    (r) => recordYear(r) === year && norm(r.requesting_area) === norm(department) && isCompleted(r.status),
+    (r) => recordYear(r) === year && norm(r.requesting_area) === norm(requestingArea) && isCompleted(r.status),
   );
 }
 
@@ -184,10 +185,11 @@ export function BudgetSummary({ records, budgets, year }: { records: TrainingRec
   const annual = budgets.filter((b) => b.year === year);
   const assigned = annual.reduce((sum, b) => sum + Number(b.allocated_budget), 0);
   const bank = annual.reduce((sum, b) => sum + Number(b.bank_hours), 0);
-  const relevantKeys = new Set(annual.map((b) => norm(b.department_name)));
+  const relevantKeys = new Set(annual.map((b) => norm(b.requesting_area_name || b.department_name)));
   const usedRows = records.filter((r) => recordYear(r) === year && isCompleted(r.status) && relevantKeys.has(norm(r.requesting_area)));
   const used = usedRows.reduce((sum, r) => sum + Number(r.cost), 0);
   const fulfilled = usedRows.reduce((sum, r) => sum + Number(r.duration), 0);
+  const unmatched = [...new Set(records.filter((r) => recordYear(r) === year && isCompleted(r.status) && !relevantKeys.has(norm(r.requesting_area))).map((r) => r.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return (
     <>
       <section className="cards budget-cards">
@@ -202,16 +204,17 @@ export function BudgetSummary({ records, budgets, year }: { records: TrainingRec
         <div className="panel budget-summary">
           <div className="panelhead"><h2>Ejecución presupuestaria y banco de horas {year}</h2><span>Cruce por Área requiriente</span></div>
           <div className="table"><table>
-            <thead><tr><th>Departamento asignado</th><th>Aprobado</th><th>Utilizado</th><th>Saldo</th><th>Banco horas</th><th>Cumplidas</th><th>% presupuesto</th><th>% horas</th></tr></thead>
+            <thead><tr><th>Departamento asignado</th><th>AREA REQUIRIENTE asociada</th><th>Aprobado</th><th>Utilizado</th><th>Saldo</th><th>Banco horas</th><th>Cumplidas</th><th>% presupuesto</th><th>% horas</th></tr></thead>
             <tbody>{annual.map((b) => {
-              const rows = usedForDepartment(records, b.department_name, year);
+              const rows = usedForDepartment(records, b.requesting_area_name || b.department_name, year);
               const usedBudget = rows.reduce((s, r) => s + Number(r.cost), 0);
               const hours = rows.reduce((s, r) => s + Number(r.duration), 0);
-              return <tr key={b.id}><td><b>{b.department_name}</b></td><td>{money(b.allocated_budget)}</td><td>{money(usedBudget)}</td><td>{money(Number(b.allocated_budget) - usedBudget)}</td><td>{Number(b.bank_hours).toLocaleString("es-EC")}</td><td>{hours.toLocaleString("es-EC")}</td><td>{b.allocated_budget ? `${((usedBudget / Number(b.allocated_budget)) * 100).toFixed(1)}%` : "0%"}</td><td>{b.bank_hours ? `${((hours / Number(b.bank_hours)) * 100).toFixed(1)}%` : "0%"}</td></tr>;
+              return <tr key={b.id}><td><b>{b.department_name}</b></td><td>{b.requesting_area_name || b.department_name}</td><td>{money(b.allocated_budget)}</td><td>{money(usedBudget)}</td><td>{money(Number(b.allocated_budget) - usedBudget)}</td><td>{Number(b.bank_hours).toLocaleString("es-EC")}</td><td>{hours.toLocaleString("es-EC")}</td><td>{b.allocated_budget ? `${((usedBudget / Number(b.allocated_budget)) * 100).toFixed(1)}%` : "0%"}</td><td>{b.bank_hours ? `${((hours / Number(b.bank_hours)) * 100).toFixed(1)}%` : "0%"}</td></tr>;
             })}</tbody>
           </table></div>
         </div>
       )}
+      {unmatched.length > 0 && <div className="alert budget-warning"><div><b>Gastos sin cruce presupuestario</b><p>Asocie estas AREA REQUIRIENTE en “Presupuesto y horas”: {unmatched.join(", ")}.</p></div></div>}
     </>
   );
 }
@@ -234,8 +237,9 @@ export function TrainingExecutionModule({
   reload: () => Promise<void>;
 }) {
   const currentYear = new Date().getFullYear();
+  const availableYears = [...records.map(recordYear), ...budgets.map((b) => b.year)].filter(Boolean);
   const [section, setSection] = useState<"dashboard" | "import" | "budget" | "report">("dashboard");
-  const [year, setYear] = useState(currentYear);
+  const [year, setYear] = useState(availableYears.length ? Math.max(...availableYears) : currentYear);
   return (
     <>
       <div className="panel module-tabs">
@@ -389,14 +393,34 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
 
 function BudgetManager({ records, budgets, departments, year, setYear, reload }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; departments: string[]; year: number; setYear: (year: number) => void; reload: () => Promise<void> }) {
   const [department, setDepartment] = useState("");
+  const [requestingArea, setRequestingArea] = useState("");
   const [allocated, setAllocated] = useState(0);
   const [hours, setHours] = useState(0);
   const [message, setMessage] = useState("");
+  const [budgetDrafts, setBudgetDrafts] = useState<Record<string, { requesting_area_name: string; allocated_budget: number; bank_hours: number }>>({});
+  const [savingAll, setSavingAll] = useState(false);
   async function save(e: FormEvent) {
     e.preventDefault();
-    const { error } = await supabase!.from("department_budgets").upsert({ year, department_name: department.trim(), allocated_budget: allocated, bank_hours: hours, updated_at: new Date().toISOString() }, { onConflict: "year,department_name" });
+    const { error } = await supabase!.from("department_budgets").upsert({ year, department_name: department.trim(), requesting_area_name: requestingArea.trim(), allocated_budget: allocated, bank_hours: hours, updated_at: new Date().toISOString() }, { onConflict: "year,department_name" });
     setMessage(error?.message ?? "Asignación guardada.");
-    if (!error) { setDepartment(""); setAllocated(0); setHours(0); await reload(); }
+    if (!error) { setDepartment(""); setRequestingArea(""); setAllocated(0); setHours(0); await reload(); }
+  }
+  const budgetDraft = (budget: BudgetAllocation) => budgetDrafts[budget.id] ?? { requesting_area_name: budget.requesting_area_name || budget.department_name, allocated_budget: Number(budget.allocated_budget), bank_hours: Number(budget.bank_hours) };
+  function changeBudget(budget: BudgetAllocation, changes: Partial<ReturnType<typeof budgetDraft>>) {
+    setBudgetDrafts((all) => ({ ...all, [budget.id]: { ...budgetDraft(budget), ...changes } }));
+  }
+  async function saveBudgetChanges() {
+    const entries = Object.entries(budgetDrafts);
+    if (!entries.length) return;
+    setSavingAll(true);
+    const results = await Promise.all(entries.map(([id, values]) => supabase!.from("department_budgets").update({ ...values, requesting_area_name: values.requesting_area_name.trim(), updated_at: new Date().toISOString() }).eq("id", id)));
+    setSavingAll(false);
+    const error = results.find((result) => result.error)?.error;
+    setMessage(error?.message ?? `${entries.length} asignaciones fueron guardadas y recalculadas.`);
+    if (!error) {
+      setBudgetDrafts({});
+      await reload();
+    }
   }
   async function remove(id: string) {
     if (!window.confirm("¿Eliminar esta asignación?")) return;
@@ -404,13 +428,13 @@ function BudgetManager({ records, budgets, departments, year, setYear, reload }:
     setMessage(error?.message ?? "Asignación eliminada.");
     if (!error) await reload();
   }
-  const requestingAreas = [...new Set([...departments, ...records.map((r) => r.requesting_area)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const requestingAreas = [...new Set(records.map((r) => r.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return <>
-    <div className="panel"><div className="panelhead"><div><h2>Asignación por departamento</h2><p>El nombre debe coincidir con “AREA REQUIRIENTE” para realizar el cruce automático.</p></div><label>Año<input type="number" min="2020" max="2100" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label></div>
-      <form className="inline budget-form" onSubmit={save}><label>Departamento / Área requiriente<input list="requesting-areas" value={department} onChange={(e) => setDepartment(e.target.value)} required /><datalist id="requesting-areas">{requestingAreas.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>Valor aprobado USD<input type="number" min="0" step="0.01" value={allocated} onChange={(e) => setAllocated(Number(e.target.value))} required /></label><label>Banco de horas<input type="number" min="0" step="0.01" value={hours} onChange={(e) => setHours(Number(e.target.value))} required /></label><button className="primary">Guardar asignación</button></form>{message && <div className="statusmsg">{message}</div>}
+    <div className="panel"><div className="panelhead"><div><h2>Asignación por departamento</h2><p>Vincule el departamento presupuestado con el valor exacto de “AREA REQUIRIENTE” de la base cargada.</p></div><label>Año<input type="number" min="2020" max="2100" value={year} onChange={(e) => setYear(Number(e.target.value))} /></label></div>
+      <form className="inline budget-form" onSubmit={save}><label>Departamento presupuestado<input list="budget-departments" value={department} onChange={(e) => setDepartment(e.target.value)} required /><datalist id="budget-departments">{departments.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>AREA REQUIRIENTE a cruzar<input list="requesting-areas" value={requestingArea} onChange={(e) => setRequestingArea(e.target.value)} required /><datalist id="requesting-areas">{requestingAreas.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>Valor aprobado USD<input type="number" min="0" step="0.01" value={allocated} onChange={(e) => setAllocated(Number(e.target.value))} required /></label><label>Banco de horas<input type="number" min="0" step="0.01" value={hours} onChange={(e) => setHours(Number(e.target.value))} required /></label><button className="primary">Agregar asignación</button></form>{message && <div className="statusmsg">{message}</div>}
     </div>
     <BudgetSummary records={records} budgets={budgets} year={year} />
-    <div className="panel"><h2>Asignaciones configuradas</h2><div className="table"><table><thead><tr><th>Año</th><th>Departamento</th><th>Valor aprobado</th><th>Banco horas</th><th>Acción</th></tr></thead><tbody>{budgets.map((b) => <tr key={b.id}><td>{b.year}</td><td>{b.department_name}</td><td>{money(b.allocated_budget)}</td><td>{b.bank_hours}</td><td><button className="secondary danger" onClick={() => void remove(b.id)}>Eliminar</button></td></tr>)}</tbody></table></div></div>
+    <div className="panel"><div className="panelhead"><div><h2>Asignaciones configuradas</h2><p>Edite todas las asignaciones necesarias y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(budgetDrafts).length || savingAll} onClick={() => void saveBudgetChanges()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(budgetDrafts).length})`}</button></div><div className="table budget-editor"><table><thead><tr><th>Año</th><th>Departamento presupuestado</th><th>AREA REQUIRIENTE a cruzar</th><th>Valor aprobado</th><th>Banco horas</th><th>Acción</th></tr></thead><tbody>{budgets.map((b) => { const draft = budgetDraft(b); return <tr key={b.id}><td>{b.year}</td><td>{b.department_name}</td><td><input list="requesting-areas" value={draft.requesting_area_name} onChange={(e) => changeBudget(b, { requesting_area_name: e.target.value })} /></td><td><input type="number" min="0" step="0.01" value={draft.allocated_budget} onChange={(e) => changeBudget(b, { allocated_budget: Number(e.target.value) })} /></td><td><input type="number" min="0" step="0.01" value={draft.bank_hours} onChange={(e) => changeBudget(b, { bank_hours: Number(e.target.value) })} /></td><td><button className="secondary danger" onClick={() => void remove(b.id)}>Eliminar</button></td></tr>; })}</tbody></table></div></div>
   </>;
 }
 
