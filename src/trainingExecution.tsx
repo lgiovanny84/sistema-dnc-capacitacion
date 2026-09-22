@@ -132,10 +132,17 @@ function dateValue(value: unknown) {
     if (!Number.isNaN(excelDate.getTime())) return excelDate.toISOString().slice(0, 10);
   }
   const text = String(value).trim();
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/);
+  if (iso) return validDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   const latin = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-  if (latin) return `${latin[3]}-${latin[2].padStart(2, "0")}-${latin[1].padStart(2, "0")}`;
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+  if (latin) return validDate(Number(latin[3]), Number(latin[2]), Number(latin[1]));
+  return null;
+}
+
+function validDate(year: number, month: number, day: number) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function excelValue(value: CellValue): unknown {
@@ -283,16 +290,28 @@ function ExcelImporter({ records, batches, reload }: { records: TrainingRecord[]
       const missing = TRAINING_HEADERS.filter((_, index) => positions[index] < 0);
       if (missing.length) throw new Error(`Faltan cabeceras obligatorias: ${missing.join(", ")}.`);
       const parsed = [] as Omit<TrainingRecord, "id" | "uploaded_at" | "uploaded_by" | "import_batch_id">[];
+      const invalidDates: string[] = [];
       for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber += 1) {
         const row = sheet.getRow(rowNumber);
         const original = TRAINING_HEADERS.map((_, index) => excelValue(row.getCell(positions[index] + 1).value));
         if (!original.some((value) => String(value).trim())) continue;
         const base: Record<string, unknown> = {};
         TRAINING_HEADERS.forEach((header, index) => { base[fields[header]] = original[index]; });
+        const startDate = dateValue(base.start_date);
+        const endDate = dateValue(base.end_date);
+        if ((String(base.start_date ?? "").trim() && !startDate) || (String(base.end_date ?? "").trim() && !endDate)) {
+          invalidDates.push(`fila ${rowNumber}: formato de fecha no reconocido`);
+        } else if (startDate && endDate && endDate < startDate) {
+          invalidDates.push(`fila ${rowNumber}: FECHA FIN ${endDate} es anterior a FECHA INICIO ${startDate}`);
+        }
         parsed.push({
           name: String(base.name ?? "").trim(), gender: String(base.gender ?? "").trim(), position: String(base.position ?? "").trim(), requesting_area: String(base.requesting_area ?? "").trim(), office: String(base.office ?? "").trim(), topic: String(base.topic ?? "").trim(), company: String(base.company ?? "").trim(),
-          start_date: dateValue(base.start_date), end_date: dateValue(base.end_date), duration: numberValue(base.duration), location: String(base.location ?? "").trim(), cost: numberValue(base.cost), status: String(base.status ?? "").trim(), justification_criterion: String(base.justification_criterion ?? "").trim(), modality: String(base.modality ?? "").trim(), area: String(base.area ?? "").trim(), department: String(base.department ?? "").trim(), level: String(base.level ?? "").trim(), occupational_group: String(base.occupational_group ?? "").trim(), knowledge_area: String(base.knowledge_area ?? "").trim(), source_filename: file.name, source_row_hash: rowHash(original),
+          start_date: startDate, end_date: endDate, duration: numberValue(base.duration), location: String(base.location ?? "").trim(), cost: numberValue(base.cost), status: String(base.status ?? "").trim(), justification_criterion: String(base.justification_criterion ?? "").trim(), modality: String(base.modality ?? "").trim(), area: String(base.area ?? "").trim(), department: String(base.department ?? "").trim(), level: String(base.level ?? "").trim(), occupational_group: String(base.occupational_group ?? "").trim(), knowledge_area: String(base.knowledge_area ?? "").trim(), source_filename: file.name, source_row_hash: rowHash(original),
         });
+      }
+      if (invalidDates.length) {
+        const detail = invalidDates.slice(0, 10).join("; ");
+        throw new Error(`${invalidDates.length} filas contienen fechas inválidas: ${detail}${invalidDates.length > 10 ? "; …" : ""}. Corrija FECHA INICIO y FECHA FIN en el Excel.`);
       }
       const invalid = parsed.filter((row) => !row.name || !row.topic || !row.requesting_area || row.duration < 0 || row.cost < 0);
       if (invalid.length) throw new Error(`${invalid.length} filas no tienen NOMBRE, TEMA o AREA REQUIRIENTE, o contienen valores negativos.`);
