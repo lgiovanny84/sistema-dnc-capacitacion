@@ -8,6 +8,7 @@ import {
   TrainingExecutionModule,
   TrainingRecord,
 } from "./trainingExecution";
+import { CompetencyMatrixManager, CompetencyMatrixRow } from "./competencyMatrix";
 type Role = "admin" | "user";
 type Need = {
   id: string;
@@ -32,6 +33,8 @@ type Need = {
   evidence: string;
   priority: string;
   planned_date: string | null;
+  planned_start_date: string | null;
+  planned_end_date: string | null;
   quarter: string;
   modality: string;
   estimated_cost: number;
@@ -54,6 +57,8 @@ type Profile = {
   onboarding_completed_at: string | null;
   can_view_entire_area: boolean;
   profile_updated_at: string;
+  deleted_at: string | null;
+  deleted_by: string | null;
 };
 type OrgUnit = {
   id: string;
@@ -115,7 +120,8 @@ const blank = {
   indicator: "",
   evidence: "",
   priority: "Media",
-  planned_date: "",
+  planned_start_date: "",
+  planned_end_date: "",
   quarter: "Q1",
   modality: "",
   estimated_cost: 0,
@@ -123,6 +129,15 @@ const blank = {
   observations: "",
 };
 const esc = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+async function fetchCompetencyMatrix() {
+  const rows: CompetencyMatrixRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase!.from("competency_matrix").select("*").order("department").order("factor").order("competency").range(from, from + 999);
+    if (error) return { data: rows, error };
+    rows.push(...((data ?? []) as CompetencyMatrixRow[]));
+    if (!data || data.length < 1000) return { data: rows, error: null };
+  }
+}
 export default function App() {
   const [session, setSession] = useState<Session | null>(null),
     [role, setRole] = useState<Role>("user"),
@@ -134,11 +149,13 @@ export default function App() {
     [budgetAllocations, setBudgetAllocations] = useState<BudgetAllocation[]>([]),
     [importBatches, setImportBatches] = useState<ImportBatch[]>([]),
     [periods, setPeriods] = useState<PlanningPeriod[]>([]),
+    [competencyMatrix, setCompetencyMatrix] = useState<CompetencyMatrixRow[]>([]),
     [selectedPeriodId, setSelectedPeriodId] = useState(() => localStorage.getItem("dnc-period-id") ?? ""),
     [menuCollapsed, setMenuCollapsed] = useState(() => localStorage.getItem("dnc-menu-collapsed") === "true"),
     [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
     [notice, setNotice] = useState(""),
+    [accessBlocked, setAccessBlocked] = useState(false),
     [recovery, setRecovery] = useState(false),
     [filters, setFilters] = useState({
       type: "",
@@ -169,6 +186,7 @@ export default function App() {
       { data: p, error: pe },
       { data: o, error: oe },
       { data: periodData, error: periodError },
+      { data: matrixData, error: matrixError },
     ] = await Promise.all([
       supabase!
         .from("training_needs")
@@ -188,8 +206,9 @@ export default function App() {
         .order("area_name")
         .order("department_name"),
       supabase!.from("planning_periods").select("*").order("start_date", { ascending: false }),
+      fetchCompetencyMatrix(),
     ]);
-    const firstError = ne || ce || pe || oe || periodError;
+    const firstError = ne || ce || pe || oe || periodError || matrixError;
     setNotice(
       firstError
         ? `No fue posible cargar los datos: ${firstError.message}`
@@ -199,11 +218,14 @@ export default function App() {
     setCatalogs(c?.length ? (c as Catalog[]) : fallback);
     setRole((p?.role as Role) || "user");
     setProfile((p as Profile) ?? null);
+    setAccessBlocked(Boolean(p && (!p.active || p.deleted_at)));
     setOrgUnits((o ?? []) as OrgUnit[]);
+    setCompetencyMatrix(matrixData ?? []);
     const loadedPeriods = (periodData ?? []) as PlanningPeriod[];
     setPeriods(loadedPeriods);
     setSelectedPeriodId((current) => {
-      const selected = loadedPeriods.find((period) => period.id === current) ?? loadedPeriods.find((period) => period.active && new Date().toISOString().slice(0, 10) >= period.start_date && new Date().toISOString().slice(0, 10) <= period.end_date) ?? loadedPeriods[0];
+      const selectable = p?.role === "admin" ? loadedPeriods : loadedPeriods.filter((period) => period.active);
+      const selected = selectable.find((period) => period.id === current) ?? selectable.find((period) => new Date().toISOString().slice(0, 10) >= period.start_date && new Date().toISOString().slice(0, 10) <= period.end_date) ?? selectable[0];
       const next = selected?.id ?? "";
       if (next) localStorage.setItem("dnc-period-id", next);
       return next;
@@ -234,6 +256,7 @@ export default function App() {
     return <UpdatePassword onDone={() => setRecovery(false)} />;
   if (!session) return <Login />;
   if (loading) return <Loading />;
+  if (accessBlocked) return <DisabledAccess email={session.user.email ?? ""} />;
   if (profile && !profile.onboarding_completed_at)
     return (
       <ProfileSetup
@@ -243,11 +266,12 @@ export default function App() {
         onDone={load}
       />
     );
-  const activePeriod = periods.find((period) => period.id === selectedPeriodId) ?? periods[0];
-  const periodNeeds = needs.filter((need) => !activePeriod || need.period_id === activePeriod.id);
-  const periodRecords = trainingRecords.filter((record) => !activePeriod || record.period_id === activePeriod.id);
-  const periodBatches = importBatches.filter((batch) => !activePeriod || batch.period_id === activePeriod.id);
-  const periodBudgets = budgetAllocations.filter((allocation) => !activePeriod || allocation.period_id === activePeriod.id);
+  const selectablePeriods = role === "admin" ? periods : periods.filter((period) => period.active);
+  const activePeriod = selectablePeriods.find((period) => period.id === selectedPeriodId) ?? selectablePeriods[0];
+  const periodNeeds = activePeriod ? needs.filter((need) => need.period_id === activePeriod.id) : [];
+  const periodRecords = activePeriod ? trainingRecords.filter((record) => record.period_id === activePeriod.id) : [];
+  const periodBatches = activePeriod ? importBatches.filter((batch) => batch.period_id === activePeriod.id) : [];
+  const periodBudgets = activePeriod ? budgetAllocations.filter((allocation) => allocation.period_id === activePeriod.id) : [];
   const visible = periodNeeds.filter(
     (n) =>
       (!filters.type || n.type === filters.type) &&
@@ -264,6 +288,10 @@ export default function App() {
     periodBudget = periodNeeds.reduce((s, n) => s + Number(n.estimated_cost), 0);
   const options = (kind: string) => {
     if (kind === "area") return unique(orgUnits.map((o) => o.area_name));
+    if (kind === "factor") {
+      const matrixFactors = unique(competencyMatrix.filter((row) => row.active).map((row) => row.factor));
+      return matrixFactors.length ? matrixFactors : catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
+    }
     if (kind === "occupational_group")
       return unique(orgUnits.map((o) => o.group_name));
     return catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
@@ -287,7 +315,8 @@ export default function App() {
       "indicator",
       "evidence",
       "priority",
-      "planned_date",
+      "planned_start_date",
+      "planned_end_date",
       "quarter",
       "modality",
       "estimated_cost",
@@ -327,7 +356,7 @@ export default function App() {
         <button className="brand" onClick={() => setTab("dashboard")} aria-label="Ir al inicio">
           <img className="brand-full" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
           <img className="brand-icon" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
-          <small>Sistema DNC · Talento Humano</small>
+          <small>Gestión Integral de Capacitación</small>
         </button>
         <nav>
           {[
@@ -369,7 +398,7 @@ export default function App() {
               {tab === "dashboard"
                 ? "Panel ejecutivo"
                 : tab === "new"
-                  ? "Levantamiento de necesidad"
+                  ? "Detección de Necesidades de Capacitación (DNC)"
                   : tab === "list"
                     ? "Gestión de necesidades"
                     : tab === "reports"
@@ -379,7 +408,7 @@ export default function App() {
                       : "Administración"}
             </h1>
           </div>
-          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!periods.length}>{periods.map((period) => <option key={period.id} value={period.id}>{period.name} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
+          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
         {notice && (
           <div className="alert">
@@ -400,8 +429,9 @@ export default function App() {
             periodName={activePeriod?.name ?? "Sin período"}
           />
         ) : tab === "new" ? (
-          <NeedForm
+          activePeriod ? <NeedForm key={activePeriod.id}
             catalogs={catalogs}
+            competencyMatrix={competencyMatrix}
             orgUnits={orgUnits}
             profile={profile}
             onDone={() => {
@@ -411,16 +441,18 @@ export default function App() {
             userId={session.user.id}
             periodId={activePeriod?.id ?? ""}
             period={activePeriod}
-          />
+          /> : <div className="alert">No existe un período activo disponible para registrar necesidades de capacitación.</div>
         ) : tab === "list" ? (
           <List
             needs={visible}
             role={role}
             reload={load}
             catalogs={catalogs}
+            competencyMatrix={competencyMatrix}
             orgUnits={orgUnits}
             profile={profile}
             userId={session.user.id}
+            period={activePeriod}
           />
         ) : tab === "reports" ? (
           <Reports
@@ -443,7 +475,7 @@ export default function App() {
               reload={load}
             /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
         ) : (
-          <Admin catalogs={catalogs} orgUnits={orgUnits} needs={periodNeeds} periods={periods} reload={load} />
+          <Admin catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
         )}
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
@@ -486,6 +518,9 @@ function Loading() {
     </div>
   );
 }
+function DisabledAccess({ email }: { email: string }) {
+  return <div className="center"><div className="login wide"><img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" /><h1>Acceso inactivo</h1><p>El usuario {email} se encuentra inactivo o eliminado. Sus registros históricos se conservan, pero no puede ingresar al Sistema de Gestión Integral de Capacitación.</p><button className="primary" onClick={() => supabase!.auth.signOut()}>Cerrar sesión</button></div></div>;
+}
 function Login() {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -518,11 +553,11 @@ function Login() {
     <div className="center">
       <form className="login" onSubmit={forgot ? reset : submit}>
         <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
-        <h1>{forgot ? "Recuperar contraseña" : "Ingreso seguro"}</h1>
+        <h1>{forgot ? "Recuperar contraseña" : "Sistema de Gestión Integral de Capacitación"}</h1>
         <p>
           {forgot
             ? "Ingrese su correo para recibir un enlace seguro."
-            : "Detección de Necesidades de Capacitación"}
+            : "Detección de Necesidades de Capacitación (DNC)"}
         </p>
         <label>
           Correo institucional
@@ -829,6 +864,8 @@ function MiniTable({
             <th>Tipo</th>
             <th>Prioridad</th>
             <th>Estado</th>
+            <th>Inicio planificado</th>
+            <th>Fin planificado</th>
             <th>Fecha y hora de registro</th>
             {(onEdit || onDelete || onRequest) && <th>Acciones</th>}
           </tr>
@@ -850,6 +887,8 @@ function MiniTable({
                 </span>
               </td>
               <td>{n.status}</td>
+              <td>{n.planned_start_date ?? n.planned_date ?? "—"}</td>
+              <td>{n.planned_end_date ?? n.planned_date ?? "—"}</td>
               <td>{new Date(n.created_at).toLocaleString("es-EC")}</td>
               {(onEdit || onDelete || onRequest) && (
                 <td className="row-actions">
@@ -879,6 +918,7 @@ function MiniTable({
 }
 function NeedForm({
   catalogs,
+  competencyMatrix,
   orgUnits,
   profile,
   onDone,
@@ -889,6 +929,7 @@ function NeedForm({
   onCancel,
 }: {
   catalogs: Catalog[];
+  competencyMatrix: CompetencyMatrixRow[];
   orgUnits: OrgUnit[];
   profile: Profile | null;
   onDone: () => void | Promise<void>;
@@ -915,7 +956,8 @@ function NeedForm({
         indicator: initialNeed.indicator,
         evidence: initialNeed.evidence,
         priority: initialNeed.priority,
-        planned_date: initialNeed.planned_date ?? "",
+        planned_start_date: initialNeed.planned_start_date ?? initialNeed.planned_date ?? "",
+        planned_end_date: initialNeed.planned_end_date ?? initialNeed.planned_date ?? "",
         quarter: initialNeed.quarter,
         modality: initialNeed.modality,
         estimated_cost: Number(initialNeed.estimated_cost),
@@ -935,6 +977,12 @@ function NeedForm({
   const opts = (k: string) =>
       catalogs.filter((c) => c.kind === k && c.active).map((c) => c.name),
     set = (k: string, v: string | number) => setF((x) => ({ ...x, [k]: v }));
+  const normKey = (value: string) => value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const matrixForDepartment = competencyMatrix.filter((row) => row.active && normKey(row.department) === normKey(f.department));
+  const factorOptions = unique(matrixForDepartment.map((row) => row.factor));
+  const competencyOptions = unique(matrixForDepartment.filter((row) => normKey(row.factor) === normKey(f.factor)).map((row) => row.competency));
+  if (f.factor && !factorOptions.some((value) => normKey(value) === normKey(f.factor))) factorOptions.push(f.factor);
+  if (f.competency && !competencyOptions.some((value) => normKey(value) === normKey(f.competency))) competencyOptions.push(f.competency);
   const groups = unique(orgUnits.map((o) => o.group_name));
   const areas = unique(
     orgUnits
@@ -950,28 +998,31 @@ function NeedForm({
       .map((o) => o.department_name),
   );
   const structureLocked = profile?.role !== "admin";
-  function setDate(value: string) {
+  function setStartDate(value: string) {
     const month = value ? Number(value.slice(5, 7)) : 0;
     setF((x) => ({
       ...x,
-      planned_date: value,
+      planned_start_date: value,
+      planned_end_date: x.planned_end_date && x.planned_end_date >= value ? x.planned_end_date : value,
       quarter: month ? `Q${Math.ceil(month / 3)}` : x.quarter,
     }));
   }
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (f.type === "Interna" && !f.planned_date) {
-      setError(
-        "La fecha planificada es obligatoria para capacitación interna.",
-      );
+    if (!f.planned_start_date || !f.planned_end_date) {
+      setError("Las fechas planificadas de inicio y fin son obligatorias.");
       return;
     }
-    if (period && f.planned_date && (f.planned_date < period.start_date || f.planned_date > period.end_date)) {
-      setError(`La fecha planificada debe estar dentro del período ${period.name}: ${period.start_date} a ${period.end_date}.`);
+    if (f.planned_end_date < f.planned_start_date) {
+      setError("La fecha planificada de fin no puede ser anterior a la fecha de inicio.");
+      return;
+    }
+    if (period && (f.planned_start_date < period.start_date || f.planned_end_date > period.end_date)) {
+      setError(`Las fechas planificadas deben estar dentro del período ${period.name}: ${period.start_date} a ${period.end_date}.`);
       return;
     }
     setSaving(true);
-    const values = { ...f, planned_date: f.planned_date || null };
+    const values = { ...f, planned_date: f.planned_start_date, planned_start_date: f.planned_start_date, planned_end_date: f.planned_end_date };
     const { error } = initialNeed
       ? await supabase!
           .from("training_needs")
@@ -1005,15 +1056,15 @@ function NeedForm({
         <Select
           label="Factor"
           value={f.factor}
-          values={opts("factor")}
-          onChange={(v) => set("factor", v)}
+          values={factorOptions.length ? factorOptions : opts("factor")}
+          onChange={(v) => setF((current) => ({ ...current, factor: v, competency: "" }))}
           required
         />
-        <Input
+        <Select
           label="Competencia a desarrollar"
           value={f.competency}
           onChange={(v) => set("competency", v)}
-          list={opts("competency")}
+          values={competencyOptions.length ? competencyOptions : opts("competency")}
           required
         />
         <Input
@@ -1045,6 +1096,8 @@ function NeedForm({
               occupational_group: v,
               area: "",
               department: "",
+              factor: "",
+              competency: "",
             }))
           }
           required
@@ -1055,7 +1108,7 @@ function NeedForm({
           value={f.area}
           values={areas}
           onChange={(v) =>
-            setF((x) => ({ ...x, area: v, department: "" }))
+            setF((x) => ({ ...x, area: v, department: "", factor: "", competency: "" }))
           }
           required
           disabled={structureLocked}
@@ -1064,7 +1117,7 @@ function NeedForm({
           label="Departamento"
           value={f.department}
           values={departments}
-          onChange={(v) => set("department", v)}
+          onChange={(v) => setF((x) => ({ ...x, department: v, factor: "", competency: "" }))}
           required
           disabled={structureLocked}
         />
@@ -1114,18 +1167,29 @@ function NeedForm({
           onChange={(v) => set("priority", v)}
         />
         <Input
-          label={`Fecha planificada${f.type === "Interna" ? " (obligatoria)" : ""}`}
+          label="Fecha planificada de inicio"
           type="date"
-          value={f.planned_date}
-          onChange={setDate}
-          required={f.type === "Interna"}
+          min={period?.start_date}
+          max={period?.end_date}
+          value={f.planned_start_date}
+          onChange={setStartDate}
+          required
+        />
+        <Input
+          label="Fecha planificada de fin"
+          type="date"
+          min={f.planned_start_date || period?.start_date}
+          max={period?.end_date}
+          value={f.planned_end_date}
+          onChange={(v) => set("planned_end_date", v)}
+          required
         />
         <Select
           label="Trimestre"
           value={f.quarter}
           values={["Q1", "Q2", "Q3", "Q4"]}
           onChange={(v) => set("quarter", v)}
-          disabled={Boolean(f.planned_date)}
+          disabled={Boolean(f.planned_start_date)}
         />
         <Select
           label="Modalidad"
@@ -1183,6 +1247,7 @@ function Input({
   type = "text",
   list,
   min,
+  max,
   step,
   required = false,
   disabled = false,
@@ -1193,6 +1258,7 @@ function Input({
   type?: string;
   list?: string[];
   min?: string;
+  max?: string;
   step?: string;
   required?: boolean;
   disabled?: boolean;
@@ -1207,6 +1273,7 @@ function Input({
         onChange={(e) => onChange(e.target.value)}
         list={list?.length ? id : undefined}
         min={min}
+        max={max}
         step={step}
         required={required}
         disabled={disabled}
@@ -1258,17 +1325,21 @@ function List({
   role,
   reload,
   catalogs,
+  competencyMatrix,
   orgUnits,
   profile,
   userId,
+  period,
 }: {
   needs: Need[];
   role: Role;
   reload: () => Promise<void>;
   catalogs: Catalog[];
+  competencyMatrix: CompetencyMatrixRow[];
   orgUnits: OrgUnit[];
   profile: Profile | null;
   userId: string;
+  period?: PlanningPeriod;
 }) {
   const [editing, setEditing] = useState<Need | null>(null),
     [requesting, setRequesting] = useState<Need | null>(null),
@@ -1317,10 +1388,12 @@ function List({
     return (
       <NeedForm
         catalogs={catalogs}
+        competencyMatrix={competencyMatrix}
         orgUnits={orgUnits}
         profile={profile}
         userId={userId}
         initialNeed={editing}
+        period={period}
         onCancel={() => setEditing(null)}
         onDone={async () => {
           await reload();
@@ -1564,15 +1637,21 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
 
 function Admin({
   catalogs,
+  competencyMatrix,
   orgUnits,
   needs,
   periods,
+  period,
+  currentUserId,
   reload,
 }: {
   catalogs: Catalog[];
+  competencyMatrix: CompetencyMatrixRow[];
   orgUnits: OrgUnit[];
   needs: Need[];
   periods: PlanningPeriod[];
+  period?: PlanningPeriod;
+  currentUserId: string;
   reload: () => Promise<void>;
 }) {
   const [kind, setKind] = useState("factor"),
@@ -1686,11 +1765,19 @@ function Admin({
       await loadUsers();
     }
   }
+  async function removeUser(user: Profile) {
+    if (user.id === currentUserId) { setMsg("No puede eliminar su propio acceso administrativo."); return; }
+    if (!window.confirm(`¿Eliminar el acceso de ${user.full_name || user.email}? El perfil y todos sus registros históricos se conservarán.`)) return;
+    const { error } = await supabase!.from("profiles").update({ active: false, deleted_at: new Date().toISOString(), deleted_by: currentUserId, profile_updated_at: new Date().toISOString() }).eq("id", user.id);
+    setMsg(error?.message ?? "Acceso eliminado. El histórico del usuario se conserva.");
+    if (!error) await loadUsers();
+  }
   return (
     <>
       <PeriodManager periods={periods} reload={reload} />
+      <CompetencyMatrixManager rows={competencyMatrix} reload={reload} />
       <CorrectionRequests needs={needs} users={users} />
-      <AdminNeeds needs={needs} reload={reload} />
+      <AdminNeeds needs={needs} period={period} reload={reload} />
       {editingUser && (
         <AdminUserEditor
           user={editingUser}
@@ -1759,11 +1846,11 @@ function Admin({
                     </select>
                   </td>
                   <td>
-                    <button
+                    <button disabled={Boolean(user.deleted_at)}
                       className={((userDraft(user).active as boolean | undefined) ?? user.active) ? "tag" : "tag off"}
                       onClick={() => changeUser(user, { active: !((userDraft(user).active as boolean | undefined) ?? user.active) })}
                     >
-                      {((userDraft(user).active as boolean | undefined) ?? user.active) ? "Activo" : "Inactivo"}
+                      {user.deleted_at ? "Eliminado" : ((userDraft(user).active as boolean | undefined) ?? user.active) ? "Activo" : "Inactivo"}
                     </button>
                   </td>
                   <td>
@@ -1788,9 +1875,9 @@ function Admin({
                   <td>{user.onboarding_completed_at ? new Date(user.onboarding_completed_at).toLocaleString("es-EC") : "Pendiente"}</td>
                   <td>{new Date(user.created_at).toLocaleString("es-EC")}</td>
                   <td>
-                    <button className="secondary" onClick={() => setEditingUser(user)}>
+                    <button className="secondary" disabled={Boolean(user.deleted_at)} onClick={() => setEditingUser(user)}>
                       Editar perfil
-                    </button>
+                    </button>{" "}<button className="secondary danger" disabled={Boolean(user.deleted_at) || user.id === currentUserId} onClick={() => void removeUser(user)}>Eliminar acceso</button>
                   </td>
                 </tr>
               ))}
@@ -2037,14 +2124,15 @@ function AdminUserEditor({
   );
 }
 
-function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<void> }) {
-  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_date: string; quarter: string }>>({}),
+function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: PlanningPeriod; reload: () => Promise<void> }) {
+  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_start_date: string; planned_end_date: string; quarter: string }>>({}),
     [savingAll, setSavingAll] = useState(false),
     [message, setMessage] = useState("");
   const draft = (n: Need) => drafts[n.id] ?? {
     competency: n.competency,
     estimated_cost: Number(n.estimated_cost),
-    planned_date: n.planned_date ?? "",
+    planned_start_date: n.planned_start_date ?? n.planned_date ?? "",
+    planned_end_date: n.planned_end_date ?? n.planned_date ?? "",
     quarter: n.quarter,
   };
   function change(n: Need, values: Partial<ReturnType<typeof draft>>) {
@@ -2052,14 +2140,18 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
   }
   function changeDate(n: Need, value: string) {
     const month = value ? Number(value.slice(5, 7)) : 0;
-    change(n, { planned_date: value, quarter: month ? `Q${Math.ceil(month / 3)}` : draft(n).quarter });
+    change(n, { planned_start_date: value, planned_end_date: draft(n).planned_end_date >= value ? draft(n).planned_end_date : value, quarter: month ? `Q${Math.ceil(month / 3)}` : draft(n).quarter });
   }
   async function saveAll() {
     const entries = Object.entries(drafts);
     if (!entries.length) return;
+    if (entries.some(([, d]) => !d.planned_start_date || !d.planned_end_date || d.planned_end_date < d.planned_start_date || (period && (d.planned_start_date < period.start_date || d.planned_end_date > period.end_date)))) {
+      setMessage(`Revise las fechas: inicio y fin deben ser válidos y estar dentro del período ${period?.name ?? "seleccionado"}.`);
+      return;
+    }
     setSavingAll(true);
     const results = await Promise.all(entries.map(([id, d]) =>
-      supabase!.from("training_needs").update({ competency: d.competency.trim(), estimated_cost: d.estimated_cost, planned_date: d.planned_date || null, quarter: d.quarter }).eq("id", id),
+      supabase!.from("training_needs").update({ competency: d.competency.trim(), estimated_cost: d.estimated_cost, planned_date: d.planned_start_date, planned_start_date: d.planned_start_date, planned_end_date: d.planned_end_date, quarter: d.quarter }).eq("id", id),
     ));
     setSavingAll(false);
     const error = results.find((result) => result.error)?.error;
@@ -2080,14 +2172,15 @@ function AdminNeeds({ needs, reload }: { needs: Need[]; reload: () => Promise<vo
       <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
       {message && <div className="statusmsg">{message}</div>}
       <div className="table admin-needs"><table>
-        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
           const d = draft(n);
           return <tr key={n.id}>
             <td><input value={d.competency} onChange={(e) => change(n, { competency: e.target.value })} /></td>
             <td>{n.area}</td>
             <td>{n.department}</td>
-            <td><input type="date" value={d.planned_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
+            <td><input type="date" min={period?.start_date} max={period?.end_date} value={d.planned_start_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
+            <td><input type="date" min={d.planned_start_date || period?.start_date} max={period?.end_date} value={d.planned_end_date} onChange={(e) => change(n, { planned_end_date: e.target.value })} /></td>
             <td>{d.quarter}</td>
             <td><input type="number" min="0" step="0.01" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: Number(e.target.value) })} /></td>
             <td className="row-actions"><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
