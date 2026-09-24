@@ -745,6 +745,44 @@ footer {
 .period-manager td input {
   min-width: 145px;
 }
+.competency-manager {
+  margin-top: 20px;
+}
+.competency-create {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+  margin: 18px 0;
+}
+.competency-create .wide {
+  grid-column: span 4;
+}
+.matrix-filters {
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  margin: 14px 0;
+}
+.matrix-count {
+  color: #647186;
+  font-size: 13px;
+}
+.matrix-table input {
+  min-width: 180px;
+}
+.matrix-table td:nth-child(6) input {
+  min-width: 300px;
+}
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.file-button input {
+  display: none;
+}
+.execution-record-editor {
+  margin-bottom: 18px;
+}
 .batch-manager {
   margin-top: 28px;
   border-top: 1px solid #e1e6ed;
@@ -815,8 +853,13 @@ footer {
     grid-template-columns: 1fr 1fr;
   }
   .period-create,
-  .budget-form.mapping-form {
+  .budget-form.mapping-form,
+  .competency-create,
+  .matrix-filters {
     grid-template-columns: 1fr 1fr;
+  }
+  .competency-create .wide {
+    grid-column: 1 / -1;
   }
   .period-fields {
     grid-template-columns: 1fr 1fr;
@@ -834,8 +877,13 @@ footer {
     grid-template-columns: 1fr;
   }
   .period-create,
-  .budget-form.mapping-form {
+  .budget-form.mapping-form,
+  .competency-create,
+  .matrix-filters {
     grid-template-columns: 1fr;
+  }
+  .competency-create .wide {
+    grid-column: auto;
   }
   .period-fields {
     grid-template-columns: 1fr;

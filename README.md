@@ -1,10 +1,11 @@
-# Sistema DNC de Capacitación
+# Sistema de Gestión Integral de Capacitación
 
-Aplicación web para levantar, priorizar, aprobar y reportar necesidades de capacitación con enfoque en brechas y desarrollo de competencias.
+Aplicación web para gestionar la Detección de Necesidades de Capacitación (DNC), priorizar y aprobar necesidades, administrar la ejecución y reportar resultados con enfoque en brechas y desarrollo de competencias.
 
 ## Funcionalidades
 
-- Capacitación interna y externa; fecha obligatoria para las internas.
+- Capacitación interna y externa con fechas planificadas de inicio y fin vinculadas al período institucional.
+- Matriz de competencias filtrada por departamento y factor, actualizable por Excel o manualmente.
 - Catálogos configurables: factores, competencias, grupos ocupacionales, áreas, departamentos y modalidades.
 - Brecha, objetivo, meta, indicador de transferencia y medio de verificación.
 - Participantes, horas, horas-persona, costo, prioridad, trimestre y estado.
