@@ -7,7 +7,7 @@ Aplicación web para gestionar la Detección de Necesidades de Capacitación (DN
 - Capacitación interna y externa con fechas planificadas de inicio y fin vinculadas al período institucional.
 - Matriz de competencias filtrada por departamento y factor, actualizable por Excel o manualmente.
 - Catálogos configurables: factores, competencias, grupos ocupacionales, áreas, departamentos y modalidades.
-- Brecha, objetivo, meta, indicador de transferencia y medio de verificación.
+- Brecha, objetivo, meta, indicador y medio de verificación.
 - Participantes, horas, horas-persona, costo, prioridad, trimestre y estado.
 - Roles `admin` y `user`, seguridad por fila y bitácora de cambios.
 - Administración de usuarios, invitaciones, cambio de rol y activación/desactivación.
