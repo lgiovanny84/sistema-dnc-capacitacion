@@ -1144,15 +1144,15 @@ function NeedForm({
           required
         />
         <Input
-          label="Meta esperada"
-          value={f.goal}
-          onChange={(v) => set("goal", v)}
-          required
-        />
-        <Input
           label="Indicador"
           value={f.indicator}
           onChange={(v) => set("indicator", v)}
+          required
+        />
+        <Input
+          label="Meta esperada"
+          value={f.goal}
+          onChange={(v) => set("goal", v)}
           required
         />
         <Input
