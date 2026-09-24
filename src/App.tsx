@@ -9,6 +9,7 @@ import {
   TrainingRecord,
 } from "./trainingExecution";
 import { CompetencyMatrixManager, CompetencyMatrixRow } from "./competencyMatrix";
+import { CollapsibleTable } from "./CollapsibleTable";
 type Role = "admin" | "user";
 type Need = {
   id: string;
@@ -852,7 +853,7 @@ function MiniTable({
   requestUserId?: string;
 }) {
   return (
-    <div className="table">
+    <CollapsibleTable>
       <table>
         <thead>
           <tr>
@@ -913,7 +914,7 @@ function MiniTable({
           ))}
         </tbody>
       </table>
-    </div>
+    </CollapsibleTable>
   );
 }
 function NeedForm({
@@ -1149,7 +1150,7 @@ function NeedForm({
           required
         />
         <Input
-          label="Indicador de transferencia"
+          label="Indicador"
           value={f.indicator}
           onChange={(v) => set("indicator", v)}
           required
@@ -1631,7 +1632,7 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
   return <div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
     <form className="inline period-create" onSubmit={createPeriod}><label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label><label>Desde<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label>Hasta<input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label><button className="primary">Crear período</button></form>
     {message && <div className="statusmsg">{message}</div>}
-    <div className="table"><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></div>
+    <CollapsibleTable><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></CollapsibleTable>
   </div>;
 }
 
@@ -1817,7 +1818,7 @@ function Admin({
           </button>
         </form>
         {msg && <div className="statusmsg">{msg}</div>}
-        <div className="table users">
+        <CollapsibleTable className="users">
           <table>
             <thead>
               <tr>
@@ -1883,7 +1884,7 @@ function Admin({
               ))}
             </tbody>
           </table>
-        </div>
+        </CollapsibleTable>
       </div>
       <div className="panel">
         <h2>Catálogos configurables</h2>
@@ -1931,12 +1932,12 @@ function Admin({
       <div className="panel">
         <h2>Estructura organizacional cargada</h2>
         <p>{orgUnits.length} relaciones activas de grupo, área y departamento.</p>
-        <div className="table">
+        <CollapsibleTable>
           <table>
             <thead><tr><th>Grupo</th><th>Área</th><th>Departamento</th><th>Fecha de carga</th></tr></thead>
             <tbody>{orgUnits.map((o) => <tr key={o.id}><td>{o.group_name}</td><td>{o.area_name}</td><td>{o.department_name}</td><td>{new Date(o.created_at).toLocaleString("es-EC")}</td></tr>)}</tbody>
           </table>
-        </div>
+        </CollapsibleTable>
       </div>
     </>
   );
@@ -1982,7 +1983,7 @@ function CorrectionRequests({ needs, users }: { needs: Need[]; users: Profile[] 
         <span>{requests.filter((r) => r.status === "Pendiente").length} pendientes</span>
       </div>
       {message && <div className="statusmsg">{message}</div>}
-      <div className="table correction-requests">
+      <CollapsibleTable className="correction-requests">
         <table>
           <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Tema</th><th>Área / Departamento</th><th>Campo</th><th>Explicación</th><th>Estado</th><th>Acciones</th></tr></thead>
           <tbody>
@@ -2011,7 +2012,7 @@ function CorrectionRequests({ needs, users }: { needs: Need[]; users: Profile[] 
             })}
           </tbody>
         </table>
-      </div>
+      </CollapsibleTable>
     </div>
   );
 }
@@ -2171,7 +2172,7 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
     <div className="panel">
       <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
       {message && <div className="statusmsg">{message}</div>}
-      <div className="table admin-needs"><table>
+      <CollapsibleTable className="admin-needs"><table>
         <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
           const d = draft(n);
@@ -2186,7 +2187,7 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
             <td className="row-actions"><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
           </tr>;
         })}</tbody>
-      </table></div>
+      </table></CollapsibleTable>
     </div>
   );
 }
