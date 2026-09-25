@@ -130,6 +130,26 @@ const blank = {
   observations: "",
 };
 const esc = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+const pageMeta: Record<string, { title: string; description: string }> = {
+  dashboard: { title: "Panel ejecutivo", description: "Visión consolidada de necesidades, presupuesto y avance del período." },
+  new: { title: "Detección de Necesidades de Capacitación (DNC)", description: "Registro estructurado de brechas, competencias y resultados esperados." },
+  list: { title: "Gestión de necesidades", description: "Consulta, seguimiento y actualización de las necesidades registradas." },
+  reports: { title: "Reportes y análisis", description: "Indicadores y reportes filtrados para la toma de decisiones." },
+  execution: { title: "Capacitación ejecutada", description: "Control de ejecución, inversión, horas y cobertura institucional." },
+  admin: { title: "Administración", description: "Configuración de períodos, usuarios, catálogos y matrices institucionales." },
+};
+
+function NavIcon({ name }: { name: string }) {
+  const paths: Record<string, React.ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    new: <><path d="M12 5v14M5 12h14" /><circle cx="12" cy="12" r="9" /></>,
+    list: <><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>,
+    reports: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V3" /><path d="M2 21h22" /></>,
+    execution: <><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14" /><path d="M8 8h8M8 12h8M8 16h5M2 21h20" /></>,
+    admin: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
+  };
+  return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
 async function fetchCompetencyMatrix() {
   const rows: CompetencyMatrixRow[] = [];
   for (let from = 0; ; from += 1000) {
@@ -373,7 +393,7 @@ export default function App() {
               onClick={() => setTab(id)}
               key={id}
             >
-              <span className="nav-short" aria-hidden="true">{label.slice(0, 1)}</span>
+              <NavIcon name={id} />
               <span className="nav-label">{label}</span>
             </button>
           ))}
@@ -395,19 +415,8 @@ export default function App() {
         <header>
           <div>
             <small>DESARROLLO ORGANIZACIONAL</small>
-            <h1>
-              {tab === "dashboard"
-                ? "Panel ejecutivo"
-                : tab === "new"
-                  ? "Detección de Necesidades de Capacitación (DNC)"
-                  : tab === "list"
-                    ? "Gestión de necesidades"
-                    : tab === "reports"
-                      ? "Reportes y análisis"
-                      : tab === "execution"
-                        ? "Capacitación ejecutada"
-                      : "Administración"}
-            </h1>
+            <h1>{pageMeta[tab]?.title ?? "Gestión de capacitación"}</h1>
+            <p className="page-description">{pageMeta[tab]?.description}</p>
           </div>
           <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
@@ -490,7 +499,7 @@ function Setup() {
   return (
     <div className="center">
       <div className="login wide">
-        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
+        <img className="login-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
         <h1>Configuración requerida</h1>
         <p>Configure Supabase para activar autenticación y datos protegidos.</p>
         <ol>
@@ -553,7 +562,7 @@ function Login() {
   return (
     <div className="center">
       <form className="login" onSubmit={forgot ? reset : submit}>
-        <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
+        <img className="login-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
         <h1>{forgot ? "Recuperar contraseña" : "Sistema de Gestión Integral de Capacitación"}</h1>
         <p>
           {forgot
