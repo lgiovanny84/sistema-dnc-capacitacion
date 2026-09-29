@@ -22,7 +22,9 @@ Aplicación web para gestionar la Detección de Necesidades de Capacitación (DN
 
 Para activar el ingreso por nombre de usuario en una instalación existente, ejecute
 `supabase/migrations/20260929_username_login.sql` y despliegue
-`supabase/functions/username-login` con `verify_jwt = false`. Los usuarios existentes
+`supabase/functions/username-login` con la verificación JWT habilitada. La clave
+pública que envía el cliente permite llamar la función antes de iniciar sesión.
+Los usuarios existentes
 reciben inicialmente el prefijo de su correo; el administrador puede cambiarlo en
 “Usuarios y accesos”. El correo sigue siendo necesario para invitaciones y recuperación.
 4. Cree el primer usuario y conviértalo en administrador con la instrucción al final del SQL.
