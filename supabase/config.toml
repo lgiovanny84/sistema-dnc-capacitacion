@@ -4,4 +4,4 @@ project_id = "ynltpsboxmxalgqxjeww"
 verify_jwt = false
 
 [functions.username-login]
-verify_jwt = false
+verify_jwt = true
