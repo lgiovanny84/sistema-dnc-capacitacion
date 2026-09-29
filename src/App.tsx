@@ -47,6 +47,7 @@ type Catalog = { id: string; kind: string; name: string; active: boolean };
 type Profile = {
   id: string;
   email: string;
+  username: string;
   full_name: string | null;
   role: Role;
   active: boolean;
@@ -532,7 +533,8 @@ function DisabledAccess({ email }: { email: string }) {
   return <div className="center"><div className="login wide"><img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" /><h1>Acceso inactivo</h1><p>El usuario {email} se encuentra inactivo o eliminado. Sus registros históricos se conservan, pero no puede ingresar al Sistema de Gestión Integral de Capacitación.</p><button className="primary" onClick={() => supabase!.auth.signOut()}>Cerrar sesión</button></div></div>;
 }
 function Login() {
-  const [email, setEmail] = useState(""),
+  const [username, setUsername] = useState(""),
+    [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [msg, setMsg] = useState(""),
     [forgot, setForgot] = useState(false),
@@ -540,11 +542,18 @@ function Login() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const { error } = await supabase!.auth.signInWithPassword({
-      email,
-      password,
+    const { data, error } = await supabase!.functions.invoke("username-login", {
+      body: { username: username.trim().toLowerCase(), password },
     });
-    setMsg(error?.message ?? "");
+    if (error || !data?.access_token || !data?.refresh_token) {
+      setMsg("Usuario o contraseña incorrectos, o acceso inactivo.");
+    } else {
+      const { error: sessionError } = await supabase!.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+      setMsg(sessionError ? "No se pudo iniciar sesión. Intente de nuevo." : "");
+    }
     setBusy(false);
   }
   async function reset(e: FormEvent) {
@@ -570,12 +579,14 @@ function Login() {
             : "Detección de Necesidades de Capacitación (DNC)"}
         </p>
         <label>
-          Correo institucional
+          {forgot ? "Correo electrónico de recuperación" : "Usuario"}
           <input
-            type="email"
+            type={forgot ? "email" : "text"}
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            autoComplete={forgot ? "email" : "username"}
+            value={forgot ? email : username}
+            onChange={(e) => forgot ? setEmail(e.target.value) : setUsername(e.target.value)}
+            placeholder={forgot ? "usuario@institucion.com" : "Ej.: lsosa"}
           />
         </label>
         {!forgot && (
@@ -1763,6 +1774,10 @@ function Admin({
   async function saveUserChanges() {
     const entries = Object.entries(userDrafts);
     if (!entries.length) return;
+    if (entries.some(([, changes]) => changes.username !== undefined && !/^[a-z0-9._-]{3,32}$/.test(changes.username))) {
+      setMsg("El usuario debe tener de 3 a 32 caracteres: letras minúsculas, números, punto, guion o guion bajo.");
+      return;
+    }
     setSavingUsers(true);
     const results = await Promise.all(entries.map(([id, changes]) =>
       supabase!.from("profiles").update({ ...changes, profile_updated_at: new Date().toISOString() }).eq("id", id),
@@ -1816,6 +1831,7 @@ function Admin({
             onChange={setEmail}
             required
           />
+          <p>El usuario de ingreso se asigna a partir del correo y puede editarse en la tabla después de invitarlo.</p>
           <Select
             label="Rol inicial"
             value={newRole}
@@ -1832,6 +1848,7 @@ function Admin({
             <thead>
               <tr>
                 <th>Nombre</th>
+                <th>Usuario</th>
                 <th>Correo</th>
                 <th>Rol</th>
                 <th>Estado</th>
@@ -1845,6 +1862,7 @@ function Admin({
               {users.map((user) => (
                 <tr key={user.id}>
                   <td>{user.full_name || "Sin nombre"}</td>
+                  <td><input aria-label={`Usuario de ${user.full_name || user.email}`} value={userDraft(user).username ?? user.username} onChange={(e) => changeUser(user, { username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })} pattern="[a-z0-9._-]{3,32}" minLength={3} maxLength={32} /></td>
                   <td>{user.email}</td>
                   <td>
                     <select
