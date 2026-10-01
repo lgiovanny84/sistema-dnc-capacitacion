@@ -47,9 +47,7 @@ export default {
           return json({ error: "La contraseña debe tener entre 12 y 128 caracteres." }, 400);
         const { error: passwordError } = await admin.auth.admin.updateUserById(user.id, { password });
         if (passwordError) return json({ error: passwordError.message }, 400);
-        const { error: updateError } = await admin.from("profiles")
-          .update({ must_change_password: false, profile_updated_at: new Date().toISOString() })
-          .eq("id", user.id);
+        const { error: updateError } = await caller.rpc("finish_first_login");
         if (updateError) return json({ error: "Se cambió la contraseña, pero no se pudo completar el primer acceso. Intente de nuevo." }, 500);
         return json({ ok: true }, 200);
       }
@@ -67,13 +65,6 @@ export default {
       if (!fullName) return json({ error: "Ingrese el nombre completo." }, 400);
       if (username && !/^[a-z0-9._-]{3,32}$/.test(username))
         return json({ error: "El usuario debe tener entre 3 y 32 caracteres válidos." }, 400);
-      if (username) {
-        const { data: existing, error: lookupError } = await admin.from("profiles")
-          .select("id").eq("username", username).maybeSingle();
-        if (lookupError) return json({ error: "No se pudo validar el usuario." }, 500);
-        if (existing) return json({ error: "Este nombre de usuario ya está asignado." }, 409);
-      }
-
       const temporaryPassword = temporaryPasswordForUser();
       const { data, error } = await admin.auth.admin.createUser({
         email,
@@ -83,11 +74,12 @@ export default {
       });
       if (error) return json({ error: error.message }, 400);
       if (!data.user) return json({ error: "No se pudo crear el usuario." }, 500);
-      const { data: createdProfile, error: updateError } = await admin.from("profiles")
+      const { data: createdProfile, error: updateError } = await caller.from("profiles")
         .update({ full_name: fullName, role, active: true, must_change_password: true,
           ...(username ? { username } : {}) })
         .eq("id", data.user.id).select("username").single();
       if (updateError || !createdProfile) {
+        if (updateError) console.error("created profile update failed", updateError.code, updateError.message);
         await admin.auth.admin.deleteUser(data.user.id);
         return json({ error: updateError?.code === "23505" ? "Este nombre de usuario ya está asignado." : "No se pudo configurar el acceso." }, 400);
       }
