@@ -1975,6 +1975,42 @@ button:disabled {
   margin-top: 2px;
 }
 
+.login-password-field {
+  display: grid;
+  gap: 7px;
+}
+
+.login-password-control {
+  position: relative;
+}
+
+.login-password-control input {
+  padding-right: 88px;
+}
+
+.login-password-control .password-visibility {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--brand-700);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.login-password-control .password-visibility:hover,
+.login-password-control .password-visibility:focus-visible {
+  background: var(--surface-soft, #eef3f8);
+  outline: 2px solid var(--brand-700);
+  outline-offset: 1px;
+}
+
 .login > small {
   padding-top: 14px;
   border-top: 1px solid var(--line);
