@@ -2171,6 +2171,23 @@ footer {
   }
 }
 
+.admin-workspace {
+  margin-bottom: 22px;
+  padding: 24px 28px 0;
+  border: 1px solid var(--border, #dce3ec);
+  border-radius: 18px;
+  background: var(--surface, #fff);
+  box-shadow: 0 12px 32px rgba(18, 44, 75, .05);
+}
+.admin-workspace-head h2 { margin: 5px 0 4px; font-size: 25px; letter-spacing: -.025em; }
+.admin-workspace-head p { margin: 0; color: var(--text-muted, #667085); }
+.admin-section-menu { display: flex; gap: 4px; overflow-x: auto; margin-top: 22px; border-top: 1px solid var(--border, #e0e6ee); }
+.admin-section-menu button { flex: none; padding: 15px 13px 13px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--text-muted, #667085); font: inherit; font-weight: 600; cursor: pointer; }
+.admin-section-menu button:hover { color: var(--text, #18344e); background: rgba(22, 59, 101, .05); }
+.admin-section-menu button.active { color: #17617e; border-bottom-color: #17617e; }
+.admin-section-menu button:focus-visible { outline: 2px solid #17617e; outline-offset: -3px; }
+@media (max-width: 640px) { .admin-workspace { padding: 18px 18px 0; } .admin-section-menu button { padding-inline: 10px; } }
+
 @media print {
   aside,
   header,

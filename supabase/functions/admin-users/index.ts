@@ -30,11 +30,15 @@ export default {
       const admin = createClient(url, service, {
         auth: { persistSession: false },
       });
-      const { data: profile, error: profileError } = await admin.from("profiles")
+      const { data: profile, error: profileError } = await caller.from("profiles")
         .select("role,active,deleted_at")
         .eq("id", user.id)
         .single();
-      if (profileError || !profile?.active || profile.deleted_at)
+      if (profileError) {
+        console.error("profile lookup failed", profileError.message);
+        return json({ error: "No se pudo verificar el perfil. Vuelva a iniciar sesión e inténtelo de nuevo." }, 500);
+      }
+      if (!profile?.active || profile.deleted_at)
         return json({ error: "Acceso inactivo o no disponible." }, 403);
       const body = await req.json();
       if (body.action === "complete-first-login") {
