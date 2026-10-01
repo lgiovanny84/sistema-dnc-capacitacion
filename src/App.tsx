@@ -1683,7 +1683,8 @@ function Admin({
   currentUserId: string;
   reload: () => Promise<void>;
 }) {
-  const [kind, setKind] = useState("factor"),
+  const [section, setSection] = useState<"users" | "periods" | "matrix" | "requests" | "needs" | "catalogs" | "structure">("users"),
+    [kind, setKind] = useState("factor"),
     [name, setName] = useState(""),
     [msg, setMsg] = useState(""),
     [users, setUsers] = useState<Profile[]>([]),
@@ -1770,7 +1771,7 @@ function Admin({
           // Conserva el mensaje general cuando la respuesta no es JSON.
         }
       }
-      setMsg(`No se pudo crear la invitación: ${detail}`);
+      setMsg(`No se pudo crear el usuario: ${detail}`);
     } else {
       setMsg("Usuario creado. Comparta los datos de ingreso; la clave temporal solo se muestra aquí.");
       setInvitation({ email: email.trim(), username: data.username, temporaryPassword: data.temporaryPassword, loginUrl: data.loginUrl });
@@ -1813,11 +1814,26 @@ function Admin({
   }
   return (
     <>
-      <PeriodManager periods={periods} reload={reload} />
-      <CompetencyMatrixManager rows={competencyMatrix} reload={reload} />
-      <CorrectionRequests needs={needs} users={users} />
-      <AdminNeeds needs={needs} period={period} reload={reload} />
-      {editingUser && (
+      <div className="admin-workspace">
+        <div className="admin-workspace-head">
+          <div><span className="eyebrow">CONFIGURACIÓN Y CONTROL</span><h2>Administración</h2><p>Seleccione una sección para gestionar la información.</p></div>
+        </div>
+        <nav className="admin-section-menu" aria-label="Secciones de administración">
+          {([
+            ["users", "Usuarios y accesos"], ["periods", "Períodos"], ["matrix", "Competencias"],
+            ["requests", "Solicitudes"], ["needs", "Necesidades"], ["catalogs", "Catálogos"],
+            ["structure", "Estructura organizacional"],
+          ] as const).map(([id, label]) => (
+            <button key={id} type="button" className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>{label}</button>
+          ))}
+        </nav>
+      </div>
+      {msg && <div className="statusmsg" role="status">{msg}</div>}
+      {section === "periods" && <PeriodManager periods={periods} reload={reload} />}
+      {section === "matrix" && <CompetencyMatrixManager rows={competencyMatrix} reload={reload} />}
+      {section === "requests" && <CorrectionRequests needs={needs} users={users} />}
+      {section === "needs" && <AdminNeeds needs={needs} period={period} reload={reload} />}
+      {section === "users" && editingUser && (
         <AdminUserEditor
           user={editingUser}
           catalogs={catalogs}
@@ -1829,7 +1845,7 @@ function Admin({
           }}
         />
       )}
-      <div className="panel">
+      {section === "users" && <div className="panel">
         <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Modifique varios usuarios y guarde toda la sección en una sola acción.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
         <form className="userform" onSubmit={invite}>
           <Input
@@ -1857,7 +1873,6 @@ function Admin({
             {sending ? "Creando…" : "Crear usuario y clave temporal"}
           </button>
         </form>
-        {msg && <div className="statusmsg">{msg}</div>}
         {invitation && <div className="access-invitation" role="status">
           <h3>Datos para el primer ingreso</h3>
           <p><strong>Enlace:</strong> <a href={invitation.loginUrl} target="_blank" rel="noreferrer">{invitation.loginUrl}</a></p>
@@ -1939,8 +1954,8 @@ function Admin({
             </tbody>
           </table>
         </CollapsibleTable>
-      </div>
-      <div className="panel">
+      </div>}
+      {section === "catalogs" && <div className="panel">
         <h2>Catálogos configurables</h2>
         <p>
           Los cambios afectan las opciones de nuevos registros y quedan
@@ -1961,8 +1976,8 @@ function Admin({
           />
           <button className="primary">Agregar</button>
         </form>
-      </div>
-      <div className="panel catalog">
+      </div>}
+      {section === "catalogs" && <div className="panel catalog">
         <div className="panelhead"><div><h2>Elementos configurados</h2><p>Edite nombres o estados y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(catalogDrafts).length || savingCatalogs} onClick={() => void saveCatalogChanges()}>{savingCatalogs ? "Guardando…" : `Guardar todos los cambios (${Object.keys(catalogDrafts).length})`}</button></div>
         {Object.entries(kinds).map(([k, label]) => (
           <div key={k}>
@@ -1982,8 +1997,8 @@ function Admin({
             </div>
           </div>
         ))}
-      </div>
-      <div className="panel">
+      </div>}
+      {section === "structure" && <div className="panel">
         <h2>Estructura organizacional cargada</h2>
         <p>{orgUnits.length} relaciones activas de grupo, área y departamento.</p>
         <CollapsibleTable>
@@ -1992,7 +2007,7 @@ function Admin({
             <tbody>{orgUnits.map((o) => <tr key={o.id}><td>{o.group_name}</td><td>{o.area_name}</td><td>{o.department_name}</td><td>{new Date(o.created_at).toLocaleString("es-EC")}</td></tr>)}</tbody>
           </table>
         </CollapsibleTable>
-      </div>
+      </div>}
     </>
   );
 }
