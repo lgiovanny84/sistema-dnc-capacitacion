@@ -535,6 +535,29 @@ function Loading() {
 function DisabledAccess({ email }: { email: string }) {
   return <div className="center"><div className="login wide"><img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" /><h1>Acceso inactivo</h1><p>El usuario {email} se encuentra inactivo o eliminado. Sus registros históricos se conservan, pero no puede ingresar al Sistema de Gestión Integral de Capacitación.</p><button className="primary" onClick={() => supabase!.auth.signOut()}>Cerrar sesión</button></div></div>;
 }
+function PasswordField({ id, label, value, onChange, minLength }: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  minLength: number;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="login-password-field">
+      <label htmlFor={id}>{label}</label>
+      <div className="login-password-control">
+        <input id={id} type={visible ? "text" : "password"} required minLength={minLength}
+          autoComplete={id === "login-password" ? "current-password" : "new-password"}
+          value={value} onChange={(e) => onChange(e.target.value)} />
+        <button type="button" className="password-visibility" aria-label={visible ? `Ocultar ${label.toLowerCase()}` : `Mostrar ${label.toLowerCase()}`}
+          aria-pressed={visible} onClick={() => setVisible((current) => !current)}>
+          {visible ? "Ocultar" : "Mostrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
 function Login() {
   const [username, setUsername] = useState(""),
     [email, setEmail] = useState(""),
@@ -593,16 +616,7 @@ function Login() {
           />
         </label>
         {!forgot && (
-          <label>
-            Contraseña
-            <input
-              type="password"
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
+          <PasswordField id="login-password" label="Contraseña" value={password} onChange={setPassword} minLength={8} />
         )}
         {msg && (
           <div className={msg.startsWith("Si el") ? "success" : "error"}>
@@ -652,26 +666,8 @@ function UpdatePassword({ onDone, firstLogin = false }: { onDone: () => void; fi
         <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
         <h1>{firstLogin ? "Configure su contraseña" : "Nueva contraseña"}</h1>
         <p>{firstLogin ? "Para completar su primer ingreso, cambie la contraseña temporal." : "Defina una nueva contraseña."} Use al menos 12 caracteres.</p>
-        <label>
-          Nueva contraseña
-          <input
-            type="password"
-            minLength={12}
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <label>
-          Confirmar contraseña
-          <input
-            type="password"
-            minLength={12}
-            required
-            value={confirm}
-            onChange={(e) => setConfirm(e.target.value)}
-          />
-        </label>
+        <PasswordField id="new-password" label="Nueva contraseña" value={password} onChange={setPassword} minLength={12} />
+        <PasswordField id="confirm-password" label="Confirmar contraseña" value={confirm} onChange={setConfirm} minLength={12} />
         {msg && <div className="error">{msg}</div>}
         <button className="primary" disabled={busy}>
           {busy ? "Guardando…" : "Guardar contraseña"}
