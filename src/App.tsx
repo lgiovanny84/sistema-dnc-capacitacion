@@ -48,6 +48,7 @@ type Profile = {
   id: string;
   email: string;
   username: string;
+  must_change_password: boolean;
   full_name: string | null;
   role: Role;
   active: boolean;
@@ -275,10 +276,12 @@ export default function App() {
   }
   if (!configured) return <Setup />;
   if (recovery && session)
-    return <UpdatePassword onDone={() => setRecovery(false)} />;
+    return <UpdatePassword onDone={() => { setRecovery(false); void load(); }} />;
   if (!session) return <Login />;
   if (loading) return <Loading />;
   if (accessBlocked) return <DisabledAccess email={session.user.email ?? ""} />;
+  if (profile?.must_change_password)
+    return <UpdatePassword firstLogin onDone={() => void load()} />;
   if (profile && !profile.onboarding_completed_at)
     return (
       <ProfileSetup
@@ -624,7 +627,7 @@ function Login() {
     </div>
   );
 }
-function UpdatePassword({ onDone }: { onDone: () => void }) {
+function UpdatePassword({ onDone, firstLogin = false }: { onDone: () => void; firstLogin?: boolean }) {
   const [password, setPassword] = useState(""),
     [confirm, setConfirm] = useState(""),
     [msg, setMsg] = useState(""),
@@ -636,22 +639,24 @@ function UpdatePassword({ onDone }: { onDone: () => void }) {
       return;
     }
     setBusy(true);
-    const { error } = await supabase!.auth.updateUser({ password });
+    const { data, error } = await supabase!.functions.invoke("admin-users", {
+      body: { action: "complete-first-login", password },
+    });
     setBusy(false);
-    if (error) setMsg(error.message);
+    if (error || data?.error) setMsg(data?.error || error?.message || "No fue posible cambiar la contraseña.");
     else onDone();
   }
   return (
     <div className="center">
       <form className="login" onSubmit={submit}>
         <img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
-        <h1>Nueva contraseña</h1>
-        <p>Defina una contraseña segura de al menos 8 caracteres.</p>
+        <h1>{firstLogin ? "Configure su contraseña" : "Nueva contraseña"}</h1>
+        <p>{firstLogin ? "Para completar su primer ingreso, cambie la contraseña temporal." : "Defina una nueva contraseña."} Use al menos 12 caracteres.</p>
         <label>
           Nueva contraseña
           <input
             type="password"
-            minLength={8}
+            minLength={12}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -661,7 +666,7 @@ function UpdatePassword({ onDone }: { onDone: () => void }) {
           Confirmar contraseña
           <input
             type="password"
-            minLength={8}
+            minLength={12}
             required
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -1270,6 +1275,7 @@ function Input({
   min,
   max,
   step,
+  placeholder,
   required = false,
   disabled = false,
 }: {
@@ -1281,6 +1287,7 @@ function Input({
   min?: string;
   max?: string;
   step?: string;
+  placeholder?: string;
   required?: boolean;
   disabled?: boolean;
 }) {
@@ -1296,6 +1303,7 @@ function Input({
         min={min}
         max={max}
         step={step}
+        placeholder={placeholder}
         required={required}
         disabled={disabled}
       />
@@ -1681,7 +1689,9 @@ function Admin({
     [users, setUsers] = useState<Profile[]>([]),
     [email, setEmail] = useState(""),
     [fullName, setFullName] = useState(""),
+    [newUsername, setNewUsername] = useState(""),
     [newRole, setNewRole] = useState<Role>("user"),
+    [invitation, setInvitation] = useState<{ email: string; username: string; temporaryPassword: string; loginUrl: string } | null>(null),
     [editingUser, setEditingUser] = useState<Profile | null>(null),
     [userDrafts, setUserDrafts] = useState<Record<string, Partial<Profile>>>({}),
     [catalogDrafts, setCatalogDrafts] = useState<Record<string, { name: string; active: boolean }>>({}),
@@ -1737,16 +1747,18 @@ function Admin({
   }
   async function invite(e: FormEvent) {
     e.preventDefault();
+    setInvitation(null);
     setSending(true);
     const { data, error } = await supabase!.functions.invoke("admin-users", {
       body: {
         email: email.trim(),
         fullName: fullName.trim(),
+        username: newUsername.trim().toLowerCase(),
         role: newRole,
       },
     });
     setSending(false);
-    if (error || data?.error) {
+    if (error || data?.error || !data?.temporaryPassword || !data?.username) {
       let detail = data?.error || error?.message || "Error no identificado.";
       const context = (error as (Error & { context?: Response }) | null)
         ?.context;
@@ -1760,11 +1772,13 @@ function Admin({
       }
       setMsg(`No se pudo crear la invitación: ${detail}`);
     } else {
-      setMsg("Invitación enviada correctamente.");
+      setMsg("Usuario creado. Comparta los datos de ingreso; la clave temporal solo se muestra aquí.");
+      setInvitation({ email: email.trim(), username: data.username, temporaryPassword: data.temporaryPassword, loginUrl: data.loginUrl });
       setEmail("");
       setFullName("");
+      setNewUsername("");
       setNewRole("user");
-      setTimeout(() => void loadUsers(), 1200);
+      await loadUsers();
     }
   }
   const userDraft = (user: Profile) => userDrafts[user.id] ?? {};
@@ -1831,7 +1845,8 @@ function Admin({
             onChange={setEmail}
             required
           />
-          <p>El usuario de ingreso se asigna a partir del correo y puede editarse en la tabla después de invitarlo.</p>
+          <Input label="Usuario de ingreso (opcional)" value={newUsername} onChange={(value) => setNewUsername(value.toLowerCase().replace(/[^a-z0-9._-]/g, ""))} placeholder="Ej.: lsosa" />
+          <p>Si lo deja vacío, el usuario se generará a partir del correo. Cada persona recibirá una clave temporal única.</p>
           <Select
             label="Rol inicial"
             value={newRole}
@@ -1839,10 +1854,22 @@ function Admin({
             onChange={(value) => setNewRole(value as Role)}
           />
           <button className="primary" disabled={sending}>
-            {sending ? "Enviando…" : "Crear e invitar usuario"}
+            {sending ? "Creando…" : "Crear usuario y clave temporal"}
           </button>
         </form>
         {msg && <div className="statusmsg">{msg}</div>}
+        {invitation && <div className="access-invitation" role="status">
+          <h3>Datos para el primer ingreso</h3>
+          <p><strong>Enlace:</strong> <a href={invitation.loginUrl} target="_blank" rel="noreferrer">{invitation.loginUrl}</a></p>
+          <p><strong>Usuario:</strong> {invitation.username}</p>
+          <p><strong>Clave temporal:</strong> <code>{invitation.temporaryPassword}</code></p>
+          <p>Al ingresar, la persona deberá crear una contraseña propia. El correo quedará para recuperación.</p>
+          <div className="actions">
+            <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(`Sistema de Gestión Integral de Capacitación\nEnlace: ${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\nAl ingresar, cambie la clave temporal.`).then(() => setMsg("Datos de ingreso copiados."), () => setMsg("No se pudo copiar; use los datos visibles."))}>Copiar datos de ingreso</button>
+            <a className="secondary" href={`mailto:${encodeURIComponent(invitation.email)}?subject=${encodeURIComponent("Acceso al Sistema de Gestión Integral de Capacitación")}&body=${encodeURIComponent(`Hola,\n\nPuede ingresar al Sistema de Gestión Integral de Capacitación con estos datos:\n${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\n\nEn el primer ingreso deberá crear una contraseña propia.\n`)}`}>Preparar correo</a>
+            <button type="button" className="linkbutton" onClick={() => setInvitation(null)}>Ocultar clave</button>
+          </div>
+        </div>}
         <CollapsibleTable className="users">
           <table>
             <thead>

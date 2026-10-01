@@ -11,6 +11,7 @@ Aplicación web para gestionar la Detección de Necesidades de Capacitación (DN
 - Participantes, horas, horas-persona, costo, prioridad, trimestre y estado.
 - Roles `admin` y `user`, seguridad por fila y bitácora de cambios.
 - Administración de usuarios, invitaciones, cambio de rol y activación/desactivación.
+- Creación de usuarios con clave temporal individual y cambio obligatorio en el primer ingreso.
 - Recuperación segura de contraseña por correo electrónico.
 - Panel ejecutivo, filtros, impresión/PDF y CSV compatible con Excel.
 
@@ -19,6 +20,9 @@ Aplicación web para gestionar la Detección de Necesidades de Capacitación (DN
 1. Cree un proyecto en Supabase y ejecute `supabase/schema.sql` en SQL Editor.
 2. Si el esquema ya estaba instalado, ejecute `supabase/migrations/20260918_permissions_and_admin.sql`.
 3. Despliegue la función `supabase/functions/admin-users` como `admin-users`.
+4. Cree el primer usuario y conviértalo en administrador con la instrucción al final del SQL.
+5. Copie `.env.example` como `.env.local` y complete URL y clave pública `anon`.
+6. Ejecute `npm install` y `npm run dev`.
 
 Para activar el ingreso por nombre de usuario en una instalación existente, ejecute
 `supabase/migrations/20260929_username_login.sql` y despliegue
@@ -27,9 +31,14 @@ pública que envía el cliente permite llamar la función antes de iniciar sesi�
 Los usuarios existentes
 reciben inicialmente el prefijo de su correo; el administrador puede cambiarlo en
 “Usuarios y accesos”. El correo sigue siendo necesario para invitaciones y recuperación.
-4. Cree el primer usuario y conviértalo en administrador con la instrucción al final del SQL.
-5. Copie `.env.example` como `.env.local` y complete URL y clave pública `anon`.
-6. Ejecute `npm install` y `npm run dev`.
+
+Para la creación con clave temporal, ejecute
+`supabase/migrations/20261001_initial_credentials.sql` y despliegue una nueva
+versión de `supabase/functions/admin-users`. El administrador define el usuario
+o deja que se genere a partir del correo; la clave aleatoria se devuelve una
+sola vez para copiar los datos o preparar un correo. El nuevo usuario debe
+cambiar esa clave en el primer acceso. La opción «Preparar correo» abre el
+cliente de correo del administrador; el envío requiere su confirmación.
 
 ## Despliegue
 

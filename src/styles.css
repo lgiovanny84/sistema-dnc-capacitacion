@@ -651,6 +651,13 @@ button.secondary,
   gap: 14px;
   align-items: end;
 }
+.userform p { grid-column: 1 / -1; margin: 0; color: var(--text-muted, #667085); font-size: 13px; }
+.access-invitation { margin: 16px 0; padding: 20px; border: 1px solid #b9d8cc; border-radius: 12px; background: #f3faf7; }
+.access-invitation h3 { margin: 0 0 12px; }
+.access-invitation p { margin: 8px 0; overflow-wrap: anywhere; }
+.access-invitation code { font-size: 14px; font-weight: 700; user-select: all; }
+.access-invitation .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+.access-invitation a.secondary { display: inline-flex; align-items: center; text-decoration: none; }
 .userform label {
   display: grid;
   gap: 7px;
