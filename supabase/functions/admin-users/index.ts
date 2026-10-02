@@ -83,6 +83,19 @@ export default {
         await admin.auth.admin.deleteUser(data.user.id);
         return json({ error: updateError?.code === "23505" ? "Este nombre de usuario ya está asignado." : "No se pudo configurar el acceso." }, 400);
       }
+      const verifier = createClient(url, anon, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const { data: verification, error: verificationError } = await verifier.auth.signInWithPassword({
+        email,
+        password: temporaryPassword,
+      });
+      if (verificationError || verification.user?.id !== data.user.id || !verification.session) {
+        console.error("temporary credential verification failed", verificationError?.code ?? "identity mismatch");
+        await admin.auth.admin.deleteUser(data.user.id);
+        return json({ error: "No se pudo validar la clave temporal. Intente crear el usuario nuevamente." }, 500);
+      }
+      await verifier.auth.signOut();
       return json({ ok: true, username: createdProfile.username, temporaryPassword, loginUrl: appOrigin }, 200);
     } catch {
       return json({ error: "No fue posible procesar la invitación." }, 500);
