@@ -47,7 +47,7 @@ export default {
           return json({ error: "La contraseña debe tener entre 12 y 128 caracteres." }, 400);
         const { error: passwordError } = await admin.auth.admin.updateUserById(user.id, { password });
         if (passwordError) return json({ error: passwordError.message }, 400);
-        const { error: updateError } = await caller.rpc("finish_first_login");
+        const { error: updateError } = await admin.rpc("finish_first_login_for_user", { p_user_id: user.id });
         if (updateError) return json({ error: "Se cambió la contraseña, pero no se pudo completar el primer acceso. Intente de nuevo." }, 500);
         return json({ ok: true }, 200);
       }
