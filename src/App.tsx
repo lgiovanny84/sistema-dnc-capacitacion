@@ -568,19 +568,34 @@ function Login() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const { data, error } = await supabase!.functions.invoke("username-login", {
-      body: { username: username.trim().toLowerCase(), password },
-    });
-    if (error || !data?.access_token || !data?.refresh_token) {
-      setMsg("Usuario o contraseña incorrectos, o acceso inactivo.");
-    } else {
+    setMsg("");
+    try {
+      const { data, error } = await supabase!.functions.invoke("username-login", {
+        body: { username: username.trim().toLowerCase(), password },
+      });
+      if (error) {
+        const status = (error as Error & { context?: Response }).context?.status;
+        setMsg(status === 401
+          ? "Usuario o contraseña incorrectos, o acceso inactivo."
+          : status === 429
+            ? "Demasiados intentos. Espere unos minutos y vuelva a intentarlo."
+            : "El servicio de ingreso no está disponible. Intente de nuevo más tarde.");
+        return;
+      }
+      if (!data?.access_token || !data?.refresh_token) {
+        setMsg("No se pudo iniciar sesión. Intente de nuevo.");
+        return;
+      }
       const { error: sessionError } = await supabase!.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       });
       setMsg(sessionError ? "No se pudo iniciar sesión. Intente de nuevo." : "");
+    } catch {
+      setMsg("No se pudo conectar con el servicio de ingreso. Revise su conexión e intente de nuevo.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
   async function reset(e: FormEvent) {
     e.preventDefault();
