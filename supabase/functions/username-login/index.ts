@@ -31,6 +31,12 @@ export default {
       const { data: profile, error: lookupError } = await admin.from("profiles")
         .select("id,email,active,deleted_at").eq("username", username).maybeSingle();
       if (lookupError || !profile || !profile.active || profile.deleted_at) {
+        console.warn("username-login: profile unavailable", {
+          lookupCode: lookupError?.code ?? null,
+          found: Boolean(profile),
+          active: profile?.active ?? null,
+          deleted: Boolean(profile?.deleted_at),
+        });
         return response({ error: "Credenciales inválidas." }, 401);
       }
 
@@ -41,13 +47,20 @@ export default {
         email: profile.email, password,
       });
       if (error || !data.session || data.user?.id !== profile.id) {
+        console.warn("username-login: auth rejected", {
+          authCode: error?.code ?? null,
+          authStatus: error?.status ?? null,
+          sessionIssued: Boolean(data.session),
+          identityMatches: Boolean(data.user?.id === profile.id),
+        });
         return response({ error: "Credenciales inválidas." }, 401);
       }
       return response({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
       });
-    } catch {
+    } catch (error) {
+      console.error("username-login: unexpected failure", error instanceof Error ? error.message : "unknown");
       return response({ error: "No se pudo iniciar sesión." }, 500);
     }
   },
