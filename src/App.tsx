@@ -1709,7 +1709,8 @@ function Admin({
     [catalogDrafts, setCatalogDrafts] = useState<Record<string, { name: string; active: boolean }>>({}),
     [savingUsers, setSavingUsers] = useState(false),
     [savingCatalogs, setSavingCatalogs] = useState(false),
-    [sending, setSending] = useState(false);
+    [sending, setSending] = useState(false),
+    [resettingUserId, setResettingUserId] = useState<string | null>(null);
   useEffect(() => {
     void loadUsers();
   }, []);
@@ -1794,8 +1795,50 @@ function Admin({
     }
   }
   const userDraft = (user: Profile) => userDrafts[user.id] ?? {};
+  const userDeleted = (user: Profile) => userDraft(user).deleted_at === undefined ? user.deleted_at : userDraft(user).deleted_at;
   function changeUser(user: Profile, changes: Partial<Profile>) {
+    if (user.id === currentUserId && (changes.active === false || changes.role === "user")) {
+      setMsg("No puede desactivar su propio acceso ni quitarse el rol de administrador.");
+      return;
+    }
+    if (changes.username !== undefined) setInvitation(null);
     setUserDrafts((all) => ({ ...all, [user.id]: { ...userDraft(user), ...changes } }));
+  }
+  function restoreUser(user: Profile) {
+    if (!window.confirm(`¿Restaurar y activar el acceso de ${user.full_name || user.username}? Se conservarán su perfil, rol y todos sus registros históricos.`)) return;
+    changeUser(user, { active: true, deleted_at: null, deleted_by: null });
+    setMsg("Restauración preparada. Pulse Guardar todos los cambios para activar el acceso; después podrá generar una clave temporal.");
+  }
+  async function resetTemporaryPassword(user: Profile) {
+    if (resettingUserId) return;
+    if (Object.keys(userDrafts).length) {
+      setMsg("Guarde todos los cambios de usuarios antes de generar una clave temporal.");
+      return;
+    }
+    if (!window.confirm(`¿Generar una nueva clave temporal para ${user.username}? Su contraseña anterior dejará de funcionar. Deberá cambiar la nueva clave al ingresar.${user.active ? "" : " La cuenta seguirá inactiva hasta que la active y guarde los cambios."}`)) return;
+    setInvitation(null);
+    setResettingUserId(user.id);
+    try {
+      const { data, error } = await supabase!.functions.invoke("admin-users", {
+        body: { action: "reset-temporary-password", userId: user.id },
+      });
+      if (error || data?.error || !data?.temporaryPassword || !data?.username) {
+        let detail = data?.error || "No se pudo generar la clave temporal.";
+        const context = (error as (Error & { context?: Response }) | null)?.context;
+        if (context) {
+          try { detail = (await context.clone().json())?.error || detail; } catch { /* Conserva el mensaje seguro. */ }
+        }
+        setMsg(detail);
+        return;
+      }
+      setInvitation({ email: data.email || user.email, username: data.username, temporaryPassword: data.temporaryPassword, loginUrl: data.loginUrl });
+      setMsg(data.active ? "Clave temporal generada y validada. Comparta los datos de ingreso." : "Clave temporal generada y validada. Active el usuario y guarde todos los cambios para permitir su ingreso.");
+      await loadUsers();
+    } catch {
+      setMsg("No se pudo confirmar la generación de la clave. Revise la conexión y vuelva a generar una clave antes de compartirla.");
+    } finally {
+      setResettingUserId(null);
+    }
   }
   async function saveUserChanges() {
     const entries = Object.entries(userDrafts);
@@ -1805,15 +1848,25 @@ function Admin({
       return;
     }
     setSavingUsers(true);
-    const results = await Promise.all(entries.map(([id, changes]) =>
-      supabase!.from("profiles").update({ ...changes, profile_updated_at: new Date().toISOString() }).eq("id", id),
-    ));
-    setSavingUsers(false);
-    const error = results.find((result) => result.error)?.error;
-    setMsg(error?.message ?? `${entries.length} usuarios fueron actualizados.`);
-    if (!error) {
-      setUserDrafts({});
+    try {
+      const results = await Promise.all(entries.map(async ([id, changes]) => {
+        const { data, error } = await supabase!.from("profiles")
+          .update({ ...changes, profile_updated_at: new Date().toISOString() }).eq("id", id).select("id").maybeSingle();
+        return { id, changes, error: error?.message || (!data ? "No se pudo actualizar el usuario." : null) };
+      }));
+      const succeeded = results.filter((result) => !result.error);
+      setUserDrafts((all) => {
+        const remaining = { ...all };
+        for (const result of succeeded) if (remaining[result.id] === result.changes) delete remaining[result.id];
+        return remaining;
+      });
+      const failed = results.find((result) => result.error);
+      setMsg(failed ? `${succeeded.length} usuarios actualizados. Quedan cambios pendientes: ${failed.error}` : `${succeeded.length} usuarios fueron actualizados.`);
       await loadUsers();
+    } catch {
+      setMsg("No se pudo confirmar el guardado. Revise la conexión; los cambios pendientes se conservan.");
+    } finally {
+      setSavingUsers(false);
     }
   }
   async function removeUser(user: Profile) {
@@ -1857,7 +1910,7 @@ function Admin({
         />
       )}
       {section === "users" && <div className="panel">
-        <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Modifique varios usuarios y guarde toda la sección en una sola acción.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
+        <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Active, inactive o restaure accesos y guarde todos los cambios. La restauración conserva el perfil y su histórico. Genere una clave temporal para recuperar el ingreso.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers || Boolean(resettingUserId)} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
         <form className="userform" onSubmit={invite}>
           <Input
             label="Nombre completo"
@@ -1880,12 +1933,12 @@ function Admin({
             values={["user", "admin"]}
             onChange={(value) => setNewRole(value as Role)}
           />
-          <button className="primary" disabled={sending}>
+          <button className="primary" disabled={sending || Boolean(resettingUserId)}>
             {sending ? "Creando…" : "Crear usuario y clave temporal"}
           </button>
         </form>
         {invitation && <div className="access-invitation" role="status">
-          <h3>Datos para el primer ingreso</h3>
+          <h3>Credenciales temporales de ingreso</h3>
           <p><strong>Enlace:</strong> <a href={invitation.loginUrl} target="_blank" rel="noreferrer">{invitation.loginUrl}</a></p>
           <p><strong>Usuario:</strong> {invitation.username}</p>
           <p><strong>Clave temporal:</strong> <code>{invitation.temporaryPassword}</code></p>
@@ -1927,12 +1980,14 @@ function Admin({
                     </select>
                   </td>
                   <td>
-                    <button disabled={Boolean(user.deleted_at)}
+                    <button disabled={Boolean(user.deleted_at) || user.id === currentUserId || Boolean(resettingUserId)}
+                      title="Cambie el estado y luego pulse Guardar todos los cambios"
                       className={((userDraft(user).active as boolean | undefined) ?? user.active) ? "tag" : "tag off"}
                       onClick={() => changeUser(user, { active: !((userDraft(user).active as boolean | undefined) ?? user.active) })}
                     >
-                      {user.deleted_at ? "Eliminado" : ((userDraft(user).active as boolean | undefined) ?? user.active) ? "Activo" : "Inactivo"}
+                      {userDeleted(user) ? "Eliminado" : ((userDraft(user).active as boolean | undefined) ?? user.active) ? "Activo" : "Inactivo"}
                     </button>
+                    {userDraft(user).active !== undefined && <small> Pendiente de guardar</small>}
                   </td>
                   <td>
                     {user.role === "admin" ? (
@@ -1956,6 +2011,14 @@ function Admin({
                   <td>{user.onboarding_completed_at ? new Date(user.onboarding_completed_at).toLocaleString("es-EC") : "Pendiente"}</td>
                   <td>{new Date(user.created_at).toLocaleString("es-EC")}</td>
                   <td>
+                    {user.deleted_at ? <button className="secondary" disabled={userDraft(user).deleted_at === null || savingUsers || Boolean(resettingUserId)} onClick={() => restoreUser(user)}>
+                      {userDraft(user).deleted_at === null ? "Restauración pendiente" : "Restaurar y activar"}
+                    </button> : <button className="secondary" disabled={user.id === currentUserId || savingUsers || Boolean(resettingUserId)} onClick={() => changeUser(user, { active: !((userDraft(user).active as boolean | undefined) ?? user.active) })}>
+                      {((userDraft(user).active as boolean | undefined) ?? user.active) ? "Inactivar" : "Activar"}
+                    </button>}{" "}
+                    {user.role === "user" && <button className="secondary" disabled={Boolean(user.deleted_at) || savingUsers || sending || Boolean(resettingUserId) || Boolean(Object.keys(userDrafts).length)} onClick={() => void resetTemporaryPassword(user)}>
+                      {resettingUserId === user.id ? "Generando…" : "Generar clave temporal"}
+                    </button>}{" "}
                     <button className="secondary" disabled={Boolean(user.deleted_at)} onClick={() => setEditingUser(user)}>
                       Editar perfil
                     </button>{" "}<button className="secondary danger" disabled={Boolean(user.deleted_at) || user.id === currentUserId} onClick={() => void removeUser(user)}>Eliminar acceso</button>

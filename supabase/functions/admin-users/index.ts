@@ -40,7 +40,15 @@ export default {
       }
       if (!profile?.active || profile.deleted_at)
         return json({ error: "Acceso inactivo o no disponible." }, 403);
-      const body = await req.json();
+      let body: Record<string, unknown>;
+      try {
+        const value = await req.json();
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          return json({ error: "Solicitud no válida." }, 400);
+        body = value;
+      } catch {
+        return json({ error: "Solicitud no válida." }, 400);
+      }
       if (body.action === "complete-first-login") {
         const password = String(body.password ?? "");
         if (password.length < 12 || password.length > 128)
@@ -53,6 +61,41 @@ export default {
       }
       if (profile.role !== "admin")
         return json({ error: "Acceso exclusivo para administradores." }, 403);
+
+      if (body.action === "reset-temporary-password") {
+        const targetId = typeof body.userId === "string" ? body.userId : "";
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetId))
+          return json({ error: "Usuario no válido." }, 400);
+        if (targetId === user.id)
+          return json({ error: "Use la recuperación de contraseña para su propia cuenta." }, 400);
+        const { data: target, error: targetError } = await admin.from("profiles")
+          .select("id,email,username,role,active,deleted_at").eq("id", targetId).maybeSingle();
+        if (targetError) return json({ error: "No se pudo consultar el usuario." }, 500);
+        if (!target || target.deleted_at)
+          return json({ error: "El usuario no existe o su acceso fue eliminado." }, 404);
+        if (target.role !== "user")
+          return json({ error: "Esta opción está disponible para cuentas con rol Usuario." }, 403);
+        const { data: identity, error: identityError } = await admin.auth.admin.getUserById(targetId);
+        if (identityError || identity?.user?.id !== target.id ||
+            identity?.user?.email?.toLowerCase() !== target.email.toLowerCase())
+          return json({ error: "El perfil no coincide con la cuenta de ingreso. Revise el usuario." }, 409);
+
+        // Fail closed: never issue a new password before requiring its replacement.
+        const { data: marked, error: markError } = await caller.from("profiles")
+          .update({ must_change_password: true, profile_updated_at: new Date().toISOString() })
+          .eq("id", targetId).is("deleted_at", null).select("id").maybeSingle();
+        if (markError || !marked)
+          return json({ error: "No se pudo configurar el cambio obligatorio de contraseña." }, 500);
+        const temporaryPassword = temporaryPasswordForUser();
+        const { error: passwordError } = await admin.auth.admin.updateUserById(targetId, { password: temporaryPassword });
+        if (passwordError)
+          return json({ error: "No se pudo confirmar la nueva clave temporal. Genere otra antes de compartirla." }, 500);
+        if (!await verifyTemporaryPassword(url, anon, target.email, temporaryPassword, target.id))
+          return json({ error: "Se reemplazó la contraseña, pero no se pudo validar la clave temporal. Genere una nueva clave antes de compartirla." }, 500);
+        return json({ ok: true, email: target.email, username: target.username, temporaryPassword, loginUrl: appOrigin, active: target.active }, 200);
+      }
+      if (body.action !== undefined && body.action !== "create")
+        return json({ error: "Acción no válida." }, 400);
 
       const email = String(body.email ?? "")
         .trim()
@@ -83,22 +126,13 @@ export default {
         await admin.auth.admin.deleteUser(data.user.id);
         return json({ error: updateError?.code === "23505" ? "Este nombre de usuario ya está asignado." : "No se pudo configurar el acceso." }, 400);
       }
-      const verifier = createClient(url, anon, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data: verification, error: verificationError } = await verifier.auth.signInWithPassword({
-        email,
-        password: temporaryPassword,
-      });
-      if (verificationError || verification.user?.id !== data.user.id || !verification.session) {
-        console.error("temporary credential verification failed", verificationError?.code ?? "identity mismatch");
+      if (!await verifyTemporaryPassword(url, anon, email, temporaryPassword, data.user.id)) {
         await admin.auth.admin.deleteUser(data.user.id);
         return json({ error: "No se pudo validar la clave temporal. Intente crear el usuario nuevamente." }, 500);
       }
-      await verifier.auth.signOut();
       return json({ ok: true, username: createdProfile.username, temporaryPassword, loginUrl: appOrigin }, 200);
     } catch {
-      return json({ error: "No fue posible procesar la invitación." }, 500);
+      return json({ error: "No fue posible procesar la solicitud." }, 500);
     }
   },
 };
@@ -113,4 +147,23 @@ function json(body: unknown, status: number) {
 function temporaryPasswordForUser() {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function verifyTemporaryPassword(url: string, anon: string, email: string, password: string, userId: string) {
+  try {
+    const verifier = createClient(url, anon, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await verifier.auth.signInWithPassword({ email, password });
+    if (error || data.user?.id !== userId || !data.session) {
+      console.error("temporary credential verification failed", error?.code ?? "identity mismatch");
+      if (data.session) await verifier.auth.signOut({ scope: "local" });
+      return false;
+    }
+    await verifier.auth.signOut();
+    return true;
+  } catch {
+    console.error("temporary credential verification unavailable");
+    return false;
+  }
 }
