@@ -15,6 +15,7 @@ const norm = (value: string) => value.trim().normalize("NFD").replace(/[\u0300-\
 const unique = (values: string[]) => [...new Set(values)].filter(Boolean);
 
 export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone, userId, periodId, period, initialNeed, onCancel }: Props) {
+  const selectedPeriodId = initialNeed?.period_id ?? periodId ?? period?.id;
   const initialForm = {
     type: initialNeed?.type ?? "Interna", factor: initialNeed?.factor ?? "", competency: initialNeed?.competency ?? "",
     gap: initialNeed?.gap ?? "", objective: initialNeed?.objective ?? "", position: initialNeed?.position ?? profile?.position ?? "",
@@ -48,7 +49,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       setError("Complete los campos esenciales con información concreta; no se admiten espacios vacíos."); return;
     }
     if (!Number.isInteger(f.participants) || f.participants < 1) { setError("Ingrese un número entero de participantes mayor que cero."); return; }
-    if (!f.department || !f.area || !f.occupational_group || !periodId) { setError("Revise el departamento asignado y el período seleccionado."); return; }
+    if (!f.department || !f.area || !f.occupational_group || !selectedPeriodId) { setError("Revise el departamento asignado y el período seleccionado."); return; }
     const planningError = validatePlanning(f, period);
     if (planningError) { setPlanningOpen(true); setError(planningError); return; }
     setSaving(true);
@@ -57,7 +58,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
         indicator: f.indicator.trim(), goal: f.goal.trim(), evidence: f.evidence.trim(), priority_reason: f.priority_reason.trim() };
       const result = initialNeed
         ? await supabase!.from("training_needs").update(values).eq("id", initialNeed.id).select("id").maybeSingle()
-        : await supabase!.from("training_needs").insert({ ...values, owner_id: userId, period_id: periodId, status: "Pendiente" }).select("id").single();
+        : await supabase!.from("training_needs").insert({ ...values, owner_id: userId, period_id: selectedPeriodId, status: "Pendiente" }).select("id").single();
       if (result.error) setError(result.error.message);
       else if (!result.data) setError("No se pudo guardar el registro. Revise sus permisos.");
       else await onDone();
