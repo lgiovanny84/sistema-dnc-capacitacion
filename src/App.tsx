@@ -10,67 +10,10 @@ import {
 } from "./trainingExecution";
 import { CompetencyMatrixManager, CompetencyMatrixRow } from "./competencyMatrix";
 import { CollapsibleTable } from "./CollapsibleTable";
-type Role = "admin" | "user";
-type Need = {
-  id: string;
-  period_id: string | null;
-  created_at: string;
-  updated_at: string;
-  owner_id: string;
-  status: string;
-  type: string;
-  factor: string;
-  competency: string;
-  gap: string;
-  objective: string;
-  occupational_group: string;
-  area: string;
-  department: string;
-  position: string;
-  participants: number;
-  hours: number;
-  goal: string;
-  indicator: string;
-  evidence: string;
-  priority: string;
-  planned_date: string | null;
-  planned_start_date: string | null;
-  planned_end_date: string | null;
-  quarter: string;
-  modality: string;
-  estimated_cost: number;
-  provider: string;
-  observations: string;
-};
-type PlanningPeriod = { id: string; name: string; start_date: string; end_date: string; active: boolean; created_at: string };
-type Catalog = { id: string; kind: string; name: string; active: boolean };
-type Profile = {
-  id: string;
-  email: string;
-  username: string;
-  must_change_password: boolean;
-  full_name: string | null;
-  role: Role;
-  active: boolean;
-  created_at: string;
-  position: string | null;
-  occupational_group: string | null;
-  area: string | null;
-  department: string | null;
-  onboarding_completed_at: string | null;
-  can_view_entire_area: boolean;
-  profile_updated_at: string;
-  deleted_at: string | null;
-  deleted_by: string | null;
-};
-type OrgUnit = {
-  id: string;
-  group_name: string;
-  area_name: string;
-  department_name: string;
-  active: boolean;
-  created_at: string;
-};
+import { Input, Select } from "./FormFields";
+import { NeedForm } from "./NeedForm";
+import type { Role, Need, PlanningPeriod, Catalog, Profile, OrgUnit } from "./needTypes";
+import { needReportColumns, needReportValue, validatePlanning, planningValues } from "./needPlanning";
 type CorrectionRequest = {
   id: string;
   need_id: string;
@@ -107,30 +50,6 @@ const fallback: Catalog[] = [
   { id: "m2", kind: "modality", name: "Virtual", active: true },
   { id: "m3", kind: "modality", name: "Híbrida", active: true },
 ];
-const blank = {
-  type: "Interna",
-  factor: "",
-  competency: "",
-  gap: "",
-  objective: "",
-  position: "",
-  occupational_group: "",
-  area: "",
-  department: "",
-  participants: 1,
-  hours: 1,
-  goal: "",
-  indicator: "",
-  evidence: "",
-  priority: "Media",
-  planned_start_date: "",
-  planned_end_date: "",
-  quarter: "Q1",
-  modality: "",
-  estimated_cost: 0,
-  provider: "",
-  observations: "",
-};
 const esc = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
 const pageMeta: Record<string, { title: string; description: string }> = {
   dashboard: { title: "Panel ejecutivo", description: "Visión consolidada de necesidades, presupuesto y avance del período." },
@@ -322,38 +241,12 @@ export default function App() {
     return catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
   };
   function exportCSV() {
-    const cols = [
-      "created_at",
-      "updated_at",
-      "type",
-      "factor",
-      "competency",
-      "gap",
-      "objective",
-      "position",
-      "occupational_group",
-      "area",
-      "department",
-      "participants",
-      "hours",
-      "goal",
-      "indicator",
-      "evidence",
-      "priority",
-      "planned_start_date",
-      "planned_end_date",
-      "quarter",
-      "modality",
-      "estimated_cost",
-      "provider",
-      "status",
-    ];
     const csv =
       "\ufeff" +
-      cols.join(";") +
+      [esc("Período"), ...needReportColumns.map(([, label]) => esc(label))].join(";") +
       "\n" +
       visible
-        .map((n) => cols.map((c) => esc(n[c as keyof Need])).join(";"))
+        .map((n) => [esc(activePeriod?.name ?? ""), ...needReportColumns.map(([key]) => esc(needReportValue(n, key)))].join(";"))
         .join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(
@@ -766,6 +659,11 @@ function ProfileSetup({
     </div>
   );
 }
+function PlanningNote({ needs }: { needs: Need[] }) {
+  const costs = needs.filter(n => n.estimated_cost == null).length;
+  const hours = needs.filter(n => n.hours == null).length;
+  return costs || hours ? <p className="planning-note">Planificación pendiente: {costs} necesidades con costo por estimar y {hours} con horas por estimar. Los totales incluyen únicamente los valores registrados y pueden ser parciales.</p> : null;
+}
 function Dashboard({
   needs,
   totalHours,
@@ -791,15 +689,16 @@ function Dashboard({
           label="Pendientes de revisión"
           value={needs.filter((n) => n.status === "Pendiente").length}
         />
-        <Card label="Banco de horas meta" value={totalHours} />
+        <Card label="Banco de horas meta" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
         <Card
           label="Presupuesto estimado"
-          value={budget.toLocaleString("es-EC", {
+          value={needs.length && needs.every(n => n.estimated_cost == null) ? "Por estimar" : budget.toLocaleString("es-EC", {
             style: "currency",
             currency: "USD",
           })}
         />
       </section>
+      {role !== "admin" && <PlanningNote needs={needs} />}
       {role === "admin" && (
         <BudgetSummary records={trainingRecords} budgets={budgetAllocations} plans={needs} periodName={periodName} />
       )}
@@ -919,7 +818,7 @@ function MiniTable({
               <td>{n.position || "—"}</td>
               <td>{n.type}</td>
               <td>
-                <span className={`pill ${n.priority.toLowerCase()}`}>
+                <span title={n.priority_reason || undefined} className={`pill ${n.priority.toLowerCase()}`}>
                   {n.priority}
                 </span>
               </td>
@@ -951,413 +850,6 @@ function MiniTable({
         </tbody>
       </table>
     </CollapsibleTable>
-  );
-}
-function NeedForm({
-  catalogs,
-  competencyMatrix,
-  orgUnits,
-  profile,
-  onDone,
-  userId,
-  periodId,
-  period,
-  initialNeed,
-  onCancel,
-}: {
-  catalogs: Catalog[];
-  competencyMatrix: CompetencyMatrixRow[];
-  orgUnits: OrgUnit[];
-  profile: Profile | null;
-  onDone: () => void | Promise<void>;
-  userId: string;
-  periodId?: string;
-  period?: PlanningPeriod;
-  initialNeed?: Need;
-  onCancel?: () => void;
-}) {
-  const initialForm = initialNeed
-    ? {
-        type: initialNeed.type,
-        factor: initialNeed.factor,
-        competency: initialNeed.competency,
-        gap: initialNeed.gap,
-        objective: initialNeed.objective,
-        position: initialNeed.position,
-        occupational_group: initialNeed.occupational_group,
-        area: initialNeed.area,
-        department: initialNeed.department,
-        participants: Number(initialNeed.participants),
-        hours: Number(initialNeed.hours),
-        goal: initialNeed.goal,
-        indicator: initialNeed.indicator,
-        evidence: initialNeed.evidence,
-        priority: initialNeed.priority,
-        planned_start_date: initialNeed.planned_start_date ?? initialNeed.planned_date ?? "",
-        planned_end_date: initialNeed.planned_end_date ?? initialNeed.planned_date ?? "",
-        quarter: initialNeed.quarter,
-        modality: initialNeed.modality,
-        estimated_cost: Number(initialNeed.estimated_cost),
-        provider: initialNeed.provider,
-        observations: initialNeed.observations,
-      }
-    : {
-        ...blank,
-        position: profile?.position ?? "",
-        occupational_group: profile?.occupational_group ?? "",
-        area: profile?.area ?? "",
-        department: profile?.department ?? "",
-      };
-  const [f, setF] = useState(initialForm),
-    [saving, setSaving] = useState(false),
-    [error, setError] = useState("");
-  const opts = (k: string) =>
-      catalogs.filter((c) => c.kind === k && c.active).map((c) => c.name),
-    set = (k: string, v: string | number) => setF((x) => ({ ...x, [k]: v }));
-  const normKey = (value: string) => value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-  const matrixForDepartment = competencyMatrix.filter((row) => row.active && normKey(row.department) === normKey(f.department));
-  const factorOptions = unique(matrixForDepartment.map((row) => row.factor));
-  const competencyOptions = unique(matrixForDepartment.filter((row) => normKey(row.factor) === normKey(f.factor)).map((row) => row.competency));
-  if (f.factor && !factorOptions.some((value) => normKey(value) === normKey(f.factor))) factorOptions.push(f.factor);
-  if (f.competency && !competencyOptions.some((value) => normKey(value) === normKey(f.competency))) competencyOptions.push(f.competency);
-  const groups = unique(orgUnits.map((o) => o.group_name));
-  const areas = unique(
-    orgUnits
-      .filter((o) => o.group_name === f.occupational_group)
-      .map((o) => o.area_name),
-  );
-  const departments = unique(
-    orgUnits
-      .filter(
-        (o) =>
-          o.group_name === f.occupational_group && o.area_name === f.area,
-      )
-      .map((o) => o.department_name),
-  );
-  const structureLocked = profile?.role !== "admin";
-  function setStartDate(value: string) {
-    const month = value ? Number(value.slice(5, 7)) : 0;
-    setF((x) => ({
-      ...x,
-      planned_start_date: value,
-      planned_end_date: x.planned_end_date && x.planned_end_date >= value ? x.planned_end_date : value,
-      quarter: month ? `Q${Math.ceil(month / 3)}` : x.quarter,
-    }));
-  }
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!f.planned_start_date || !f.planned_end_date) {
-      setError("Las fechas planificadas de inicio y fin son obligatorias.");
-      return;
-    }
-    if (f.planned_end_date < f.planned_start_date) {
-      setError("La fecha planificada de fin no puede ser anterior a la fecha de inicio.");
-      return;
-    }
-    if (period && (f.planned_start_date < period.start_date || f.planned_end_date > period.end_date)) {
-      setError(`Las fechas planificadas deben estar dentro del período ${period.name}: ${period.start_date} a ${period.end_date}.`);
-      return;
-    }
-    setSaving(true);
-    const values = { ...f, planned_date: f.planned_start_date, planned_start_date: f.planned_start_date, planned_end_date: f.planned_end_date };
-    const { error } = initialNeed
-      ? await supabase!
-          .from("training_needs")
-          .update(values)
-          .eq("id", initialNeed.id)
-      : await supabase!.from("training_needs").insert({
-          ...values,
-          owner_id: userId,
-          period_id: periodId || null,
-          status: "Pendiente",
-        });
-    setSaving(false);
-    if (error) setError(error.message);
-    else await onDone();
-  }
-  return (
-    <form className="panel form" onSubmit={submit}>
-      <div className="intro">
-        <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Necesidad basada en una brecha verificable"}</h2>
-        <p>
-          Vincule la brecha con una competencia, resultado esperado y evidencia.{period ? ` Período: ${period.name}.` : ""}
-        </p>
-      </div>
-      <div className="fields">
-        <Select
-          label="Tipo de capacitación"
-          value={f.type}
-          values={["Interna", "Externa"]}
-          onChange={(v) => set("type", v)}
-        />
-        <Select
-          label="Factor"
-          value={f.factor}
-          values={factorOptions.length ? factorOptions : opts("factor")}
-          onChange={(v) => setF((current) => ({ ...current, factor: v, competency: "" }))}
-          required
-        />
-        <Select
-          label="Competencia a desarrollar"
-          value={f.competency}
-          onChange={(v) => set("competency", v)}
-          values={competencyOptions.length ? competencyOptions : opts("competency")}
-          required
-        />
-        <Input
-          label="Brecha identificada / Necesidad identificada"
-          value={f.gap}
-          onChange={(v) => set("gap", v)}
-          required
-        />
-        <Input
-          label="Objetivo de aprendizaje"
-          value={f.objective}
-          onChange={(v) => set("objective", v)}
-          required
-        />
-        <Input
-          label="Cargo beneficiario"
-          value={f.position}
-          list={opts("position")}
-          onChange={(v) => set("position", v)}
-          required
-        />
-        <Select
-          label="Grupo ocupacional"
-          value={f.occupational_group}
-          values={groups}
-          onChange={(v) =>
-            setF((x) => ({
-              ...x,
-              occupational_group: v,
-              area: "",
-              department: "",
-              factor: "",
-              competency: "",
-            }))
-          }
-          required
-          disabled={structureLocked}
-        />
-        <Select
-          label="Área"
-          value={f.area}
-          values={areas}
-          onChange={(v) =>
-            setF((x) => ({ ...x, area: v, department: "", factor: "", competency: "" }))
-          }
-          required
-          disabled={structureLocked}
-        />
-        <Select
-          label="Departamento"
-          value={f.department}
-          values={departments}
-          onChange={(v) => setF((x) => ({ ...x, department: v, factor: "", competency: "" }))}
-          required
-          disabled={structureLocked}
-        />
-        {structureLocked && (
-          <div className="structure-note full">
-            Grupo, área y departamento provienen de su perfil y no pueden modificarse en este registro.
-          </div>
-        )}
-        <Input
-          label="N.º de participantes"
-          type="number"
-          min="1"
-          value={f.participants}
-          onChange={(v) => set("participants", Number(v))}
-          required
-        />
-        <Input
-          label="Horas por participante"
-          type="number"
-          min="1"
-          value={f.hours}
-          onChange={(v) => set("hours", Number(v))}
-          required
-        />
-        <Input
-          label="Indicador"
-          value={f.indicator}
-          onChange={(v) => set("indicator", v)}
-          required
-        />
-        <Input
-          label="Meta esperada"
-          value={f.goal}
-          onChange={(v) => set("goal", v)}
-          required
-        />
-        <Input
-          label="Medio de verificación"
-          value={f.evidence}
-          onChange={(v) => set("evidence", v)}
-          required
-        />
-        <Select
-          label="Prioridad"
-          value={f.priority}
-          values={["Baja", "Media", "Alta", "Crítica"]}
-          onChange={(v) => set("priority", v)}
-        />
-        <Input
-          label="Fecha planificada de inicio"
-          type="date"
-          min={period?.start_date}
-          max={period?.end_date}
-          value={f.planned_start_date}
-          onChange={setStartDate}
-          required
-        />
-        <Input
-          label="Fecha planificada de fin"
-          type="date"
-          min={f.planned_start_date || period?.start_date}
-          max={period?.end_date}
-          value={f.planned_end_date}
-          onChange={(v) => set("planned_end_date", v)}
-          required
-        />
-        <Select
-          label="Trimestre"
-          value={f.quarter}
-          values={["Q1", "Q2", "Q3", "Q4"]}
-          onChange={(v) => set("quarter", v)}
-          disabled={Boolean(f.planned_start_date)}
-        />
-        <Select
-          label="Modalidad"
-          value={f.modality}
-          values={opts("modality")}
-          onChange={(v) => set("modality", v)}
-          required
-        />
-        {f.type === "Externa" && (
-          <>
-            <Input
-              label="Proveedor sugerido"
-              value={f.provider}
-              onChange={(v) => set("provider", v)}
-            />
-            <Input
-              label="Costo estimado (USD)"
-              type="number"
-              min="0"
-              step="0.01"
-              value={f.estimated_cost}
-              onChange={(v) => set("estimated_cost", Number(v))}
-            />
-          </>
-        )}
-        <label className="full">
-          Observaciones
-          <textarea
-            value={f.observations}
-            onChange={(e) => set("observations", e.target.value)}
-            rows={3}
-          />
-        </label>
-      </div>
-      {error && <div className="error">{error}</div>}
-      <div className="actions">
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => (initialNeed && onCancel ? onCancel() : setF(initialForm))}
-        >
-          {initialNeed ? "Cancelar" : "Limpiar"}
-        </button>
-        <button className="primary" disabled={saving}>
-          {saving ? "Guardando…" : initialNeed ? "Guardar cambios" : "Registrar necesidad"}
-        </button>
-      </div>
-    </form>
-  );
-}
-function Input({
-  label,
-  value,
-  onChange,
-  type = "text",
-  list,
-  min,
-  max,
-  step,
-  placeholder,
-  required = false,
-  disabled = false,
-}: {
-  label: string;
-  value: string | number;
-  onChange: (v: string) => void;
-  type?: string;
-  list?: string[];
-  min?: string;
-  max?: string;
-  step?: string;
-  placeholder?: string;
-  required?: boolean;
-  disabled?: boolean;
-}) {
-  const id = label.replaceAll(" ", "-");
-  return (
-    <label>
-      {label}
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        list={list?.length ? id : undefined}
-        min={min}
-        max={max}
-        step={step}
-        placeholder={placeholder}
-        required={required}
-        disabled={disabled}
-      />
-      {list?.length ? (
-        <datalist id={id}>
-          {list.map((x) => (
-            <option key={x}>{x}</option>
-          ))}
-        </datalist>
-      ) : null}
-    </label>
-  );
-}
-function Select({
-  label,
-  value,
-  values,
-  onChange,
-  required = false,
-  disabled = false,
-}: {
-  label: string;
-  value: string;
-  values: string[];
-  onChange: (v: string) => void;
-  required?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <label>
-      {label}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        required={required}
-        disabled={disabled}
-      >
-        <option value="">Seleccione…</option>
-        {values.map((x) => (
-          <option key={x}>{x}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 function List({
@@ -1591,15 +1083,16 @@ function Reports({
       </div>
       <section className="cards">
         <Card label="Registros filtrados" value={needs.length} />
-        <Card label="Horas-persona" value={totalHours} />
+        <Card label="Horas-persona" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
         <Card
           label="Presupuesto"
-          value={budget.toLocaleString("es-EC", {
+          value={needs.length && needs.every(n => n.estimated_cost == null) ? "Por estimar" : budget.toLocaleString("es-EC", {
             style: "currency",
             currency: "USD",
           })}
         />
       </section>
+      <PlanningNote needs={needs} />
       <section className="grid2">
         <div className="panel">
           <h2>Por área</h2>
@@ -2269,33 +1762,30 @@ function AdminUserEditor({
 }
 
 function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: PlanningPeriod; reload: () => Promise<void> }) {
-  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: number; planned_start_date: string; planned_end_date: string; quarter: string }>>({}),
+  const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: string; hours: string; planned_start_date: string; planned_end_date: string }>>({}),
     [savingAll, setSavingAll] = useState(false),
     [message, setMessage] = useState("");
   const draft = (n: Need) => drafts[n.id] ?? {
     competency: n.competency,
-    estimated_cost: Number(n.estimated_cost),
+    estimated_cost: n.estimated_cost == null ? "" : String(n.estimated_cost),
+    hours: n.hours == null ? "" : String(n.hours),
     planned_start_date: n.planned_start_date ?? n.planned_date ?? "",
     planned_end_date: n.planned_end_date ?? n.planned_date ?? "",
-    quarter: n.quarter,
   };
   function change(n: Need, values: Partial<ReturnType<typeof draft>>) {
     setDrafts((all) => ({ ...all, [n.id]: { ...draft(n), ...values } }));
   }
   function changeDate(n: Need, value: string) {
-    const month = value ? Number(value.slice(5, 7)) : 0;
-    change(n, { planned_start_date: value, planned_end_date: draft(n).planned_end_date >= value ? draft(n).planned_end_date : value, quarter: month ? `Q${Math.ceil(month / 3)}` : draft(n).quarter });
+    change(n, { planned_start_date: value });
   }
   async function saveAll() {
     const entries = Object.entries(drafts);
     if (!entries.length) return;
-    if (entries.some(([, d]) => !d.planned_start_date || !d.planned_end_date || d.planned_end_date < d.planned_start_date || (period && (d.planned_start_date < period.start_date || d.planned_end_date > period.end_date)))) {
-      setMessage(`Revise las fechas: inicio y fin deben ser válidos y estar dentro del período ${period?.name ?? "seleccionado"}.`);
-      return;
-    }
+    const invalid = entries.map(([, d]) => validatePlanning(d, period)).find(Boolean);
+    if (invalid) { setMessage(invalid); return; }
     setSavingAll(true);
     const results = await Promise.all(entries.map(([id, d]) =>
-      supabase!.from("training_needs").update({ competency: d.competency.trim(), estimated_cost: d.estimated_cost, planned_date: d.planned_start_date, planned_start_date: d.planned_start_date, planned_end_date: d.planned_end_date, quarter: d.quarter }).eq("id", id),
+      supabase!.from("training_needs").update({ competency: d.competency.trim(), ...planningValues(d) }).eq("id", id),
     ));
     setSavingAll(false);
     const error = results.find((result) => result.error)?.error;
@@ -2316,7 +1806,7 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
       <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
       {message && <div className="statusmsg">{message}</div>}
       <CollapsibleTable className="admin-needs"><table>
-        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Presupuesto USD</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Horas por participante</th><th>Costo estimado (USD)</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
           const d = draft(n);
           return <tr key={n.id}>
@@ -2325,8 +1815,9 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
             <td>{n.department}</td>
             <td><input type="date" min={period?.start_date} max={period?.end_date} value={d.planned_start_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
             <td><input type="date" min={d.planned_start_date || period?.start_date} max={period?.end_date} value={d.planned_end_date} onChange={(e) => change(n, { planned_end_date: e.target.value })} /></td>
-            <td>{d.quarter}</td>
-            <td><input type="number" min="0" step="0.01" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: Number(e.target.value) })} /></td>
+            <td>{d.planned_start_date ? `Trimestre ${Math.ceil(Number(d.planned_start_date.slice(5, 7)) / 3)}` : "Por planificar"}</td>
+            <td><input aria-label={`Horas de ${n.competency}`} type="number" min="0.01" step="0.01" placeholder="Por estimar" value={d.hours} onChange={(e) => change(n, { hours: e.target.value })} /></td>
+            <td><input type="number" min="0" step="0.01" aria-label={`Costo de ${n.competency}`} placeholder="Por estimar" value={d.estimated_cost} onChange={(e) => change(n, { estimated_cost: e.target.value })} /></td>
             <td className="row-actions"><button className="secondary danger" onClick={() => remove(n)}>Eliminar</button></td>
           </tr>;
         })}</tbody>

@@ -61,8 +61,8 @@ export type TrainingPlan = {
   id: string;
   period_id: string | null;
   department: string;
-  estimated_cost: number;
-  hours: number;
+  estimated_cost: number | null;
+  hours: number | null;
   participants: number;
   planned_date: string | null;
   created_at: string;
@@ -207,12 +207,18 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
   const mappings = new Map(budgets.map((budget) => [norm(budget.department_name), budget]));
   const annual = [...plans.filter((plan) => plan.department.trim()).reduce((grouped, plan) => {
     const key = norm(plan.department);
-    const current = grouped.get(key) ?? { id: key, department_name: plan.department.trim(), requesting_area_name: null as string | null, allocated_budget: 0, bank_hours: 0 };
-    current.allocated_budget += Number(plan.estimated_cost);
-    current.bank_hours += Number(plan.hours) * Number(plan.participants);
+    const current = grouped.get(key) ?? { id: key, department_name: plan.department.trim(), requesting_area_name: null as string | null, allocated_budget: 0, bank_hours: 0, cost_pending: 0, hours_pending: 0, cost_known: 0, hours_known: 0 };
+    if (plan.estimated_cost == null) current.cost_pending += 1;
+    else { current.allocated_budget += Number(plan.estimated_cost); current.cost_known += 1; }
+    if (plan.hours == null) current.hours_pending += 1;
+    else { current.bank_hours += Number(plan.hours) * Number(plan.participants); current.hours_known += 1; }
     grouped.set(key, current);
     return grouped;
-  }, new Map<string, { id: string; department_name: string; requesting_area_name: string | null; allocated_budget: number; bank_hours: number }>()).values()].map((line) => ({ ...line, requesting_area_name: mappings.get(norm(line.department_name))?.requesting_area_name || null }));
+  }, new Map<string, { id: string; department_name: string; requesting_area_name: string | null; allocated_budget: number; bank_hours: number; cost_pending: number; hours_pending: number; cost_known: number; hours_known: number }>()).values()].map((line) => ({ ...line, requesting_area_name: mappings.get(norm(line.department_name))?.requesting_area_name || null }));
+  const costsPending = plans.filter(plan => plan.estimated_cost == null).length;
+  const hoursPending = plans.filter(plan => plan.hours == null).length;
+  const costsKnown = plans.length - costsPending;
+  const hoursKnown = plans.length - hoursPending;
   const assigned = annual.reduce((sum, b) => sum + Number(b.allocated_budget), 0);
   const bank = annual.reduce((sum, b) => sum + Number(b.bank_hours), 0);
   const relevantKeys = new Set(annual.map((b) => norm(b.requesting_area_name || b.department_name)));
@@ -223,13 +229,14 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
   return (
     <>
       <section className="cards budget-cards">
-        <Metric label="Valor presupuestado" value={money(assigned)} />
+        <Metric label="Valor presupuestado" value={!costsKnown && costsPending ? "Por estimar" : money(assigned)} />
         <Metric label="Valor utilizado" value={money(used)} />
-        <Metric label="Saldo disponible" value={money(assigned - used)} />
-        <Metric label="Banco de horas" value={bank.toLocaleString("es-EC")} />
+        <Metric label="Saldo disponible" value={costsPending ? "Pendiente de estimación" : money(assigned - used)} />
+        <Metric label="Banco de horas" value={!hoursKnown && hoursPending ? "Por estimar" : bank.toLocaleString("es-EC")} />
         <Metric label="Horas cumplidas" value={fulfilled.toLocaleString("es-EC")} />
-        <Metric label="Cumplimiento de horas" value={bank ? `${Math.min(999, (fulfilled / bank) * 100).toFixed(1)}%` : "0%"} />
+        <Metric label="Cumplimiento de horas" value={hoursPending ? "Pendiente de estimación" : bank ? `${Math.min(999, (fulfilled / bank) * 100).toFixed(1)}%` : "—"} />
       </section>
+      {(costsPending > 0 || hoursPending > 0) && <p className="planning-note">Hay {costsPending} necesidades con costo por estimar y {hoursPending} con horas por estimar. Presupuesto y banco de horas incluyen solo valores registrados; saldos y porcentajes quedan pendientes cuando faltan estimaciones.</p>}
       {annual.length > 0 && (
         <div className="panel budget-summary">
           <div className="panelhead"><div><h2>Ejecución presupuestaria y banco de horas · {periodName}</h2><p>Presupuesto y horas: Módulo 1. Gasto y duración: Excel ejecutado.</p></div><span>DEPARTAMENTO ↔ AREA REQUIRIENTE</span></div>
@@ -240,7 +247,7 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
               const rows = usedForDepartment(records, crossName);
               const usedBudget = rows.reduce((s, r) => s + Number(r.cost), 0);
               const hours = rows.reduce((s, r) => s + Number(r.duration), 0);
-              return <tr key={b.id}><td><b>{b.department_name}</b></td><td>{crossName}{norm(crossName) === norm(b.department_name) ? <small className="cross-mode">Automático</small> : <small className="cross-mode override">Recategorizado</small>}</td><td>{money(b.allocated_budget)}</td><td>{money(usedBudget)}</td><td>{money(Number(b.allocated_budget) - usedBudget)}</td><td>{Number(b.bank_hours).toLocaleString("es-EC")}</td><td>{hours.toLocaleString("es-EC")}</td><td>{b.allocated_budget ? `${((usedBudget / Number(b.allocated_budget)) * 100).toFixed(1)}%` : "0%"}</td><td>{b.bank_hours ? `${((hours / Number(b.bank_hours)) * 100).toFixed(1)}%` : "0%"}</td></tr>;
+              return <tr key={b.id}><td><b>{b.department_name}</b></td><td>{crossName}{norm(crossName) === norm(b.department_name) ? <small className="cross-mode">Automático</small> : <small className="cross-mode override">Recategorizado</small>}</td><td>{!b.cost_known && b.cost_pending ? "Por estimar" : money(b.allocated_budget)}{b.cost_pending > 0 && b.cost_known > 0 && <small> · parcial</small>}</td><td>{money(usedBudget)}</td><td>{b.cost_pending ? "Por estimar" : money(Number(b.allocated_budget) - usedBudget)}</td><td>{!b.hours_known && b.hours_pending ? "Por estimar" : Number(b.bank_hours).toLocaleString("es-EC")}{b.hours_pending > 0 && b.hours_known > 0 && <small> · parcial</small>}</td><td>{hours.toLocaleString("es-EC")}</td><td>{b.cost_pending ? "Pendiente" : b.allocated_budget ? `${((usedBudget / Number(b.allocated_budget)) * 100).toFixed(1)}%` : "—"}</td><td>{b.hours_pending ? "Pendiente" : b.bank_hours ? `${((hours / Number(b.bank_hours)) * 100).toFixed(1)}%` : "—"}</td></tr>;
             })}</tbody>
           </table></CollapsibleTable>
         </div>
