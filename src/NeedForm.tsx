@@ -5,6 +5,7 @@ import { Input, Select } from "./FormFields";
 import type { Need, Catalog, PlanningPeriod, Profile, OrgUnit } from "./needTypes";
 import type { CompetencyMatrixRow } from "./competencyMatrix";
 import { planningValues, validatePlanning } from "./needPlanning";
+import { competencyGroup } from "./competencyAssignment";
 
 type Props = {
   catalogs: Catalog[]; competencyMatrix: CompetencyMatrixRow[]; orgUnits: OrgUnit[];
@@ -33,12 +34,13 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
   const [planningOpen, setPlanningOpen] = useState(false);
   const set = (key: keyof typeof f, value: string | number) => setF(current => ({ ...current, [key]: value }));
   const opts = (kind: string) => catalogs.filter(c => c.kind === kind && c.active).map(c => c.name);
-  const departmentMatrix = competencyMatrix.filter(row => row.active && norm(row.department) === norm(f.department));
+  const departmentMatrix = competencyMatrix.filter(row => row.active && norm(row.area) === norm(f.area) && norm(row.department) === norm(f.department));
   const factors = unique(departmentMatrix.map(row => row.factor));
   const competencies = unique(departmentMatrix.filter(row => norm(row.factor) === norm(f.factor)).map(row => row.competency));
   if (f.factor && !factors.some(value => norm(value) === norm(f.factor))) factors.push(f.factor);
   if (f.competency && !competencies.some(value => norm(value) === norm(f.competency))) competencies.push(f.competency);
   const locked = profile?.role !== "admin";
+  const assignedGroup = (!locked && competencyGroup(competencyMatrix, f)) || f.occupational_group;
   const justificationRequired = !initialNeed || Boolean(initialNeed.priority_reason) || initialNeed.priority !== f.priority;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -49,12 +51,12 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       setError("Complete los campos esenciales con información concreta; no se admiten espacios vacíos."); return;
     }
     if (!Number.isInteger(f.participants) || f.participants < 1) { setError("Ingrese un número entero de participantes mayor que cero."); return; }
-    if (!f.department || !f.area || !f.occupational_group || !selectedPeriodId) { setError("Revise el departamento asignado y el período seleccionado."); return; }
+    if (!f.department || !f.area || !assignedGroup || !selectedPeriodId) { setError("Revise el departamento asignado y el período seleccionado."); return; }
     const planningError = validatePlanning(f, period);
     if (planningError) { setPlanningOpen(true); setError(planningError); return; }
     setSaving(true);
     try {
-      const values = { ...f, ...planningValues(f), gap: f.gap.trim(), objective: f.objective.trim(), position: f.position.trim(),
+      const values = { ...f, occupational_group: assignedGroup, ...planningValues(f), gap: f.gap.trim(), objective: f.objective.trim(), position: f.position.trim(),
         indicator: f.indicator.trim(), goal: f.goal.trim(), evidence: f.evidence.trim(), priority_reason: f.priority_reason.trim() };
       const result = initialNeed
         ? await supabase!.from("training_needs").update(values).eq("id", initialNeed.id).select("id").maybeSingle()
@@ -74,15 +76,15 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       <div><dt>Período</dt><dd>{period?.name ?? "Sin período"}</dd></div>
       <div><dt>Departamento</dt><dd>{f.department || "Sin asignar"}</dd></div>
       <div><dt>Área</dt><dd>{f.area || "Sin asignar"}</dd></div>
-      <div><dt>Grupo ocupacional</dt><dd>{f.occupational_group || "Sin asignar"}</dd></div>
+      <div><dt>Grupo ocupacional</dt><dd>{assignedGroup || "Sin asignar"}</dd></div>
     </dl>
     {!locked && <details className="need-assignment"><summary>Cambiar asignación organizacional</summary><div className="fields">
-      <Select label="Grupo ocupacional" value={f.occupational_group} values={unique(orgUnits.map(o => o.group_name))}
-        onChange={value => setF(current => ({ ...current, occupational_group: value, area: "", department: "", factor: "", competency: "" }))} />
-      <Select label="Área" value={f.area} values={unique(orgUnits.filter(o => o.group_name === f.occupational_group).map(o => o.area_name))}
+      <Select label="Área" value={f.area} values={unique([...orgUnits.map(o => o.area_name), ...competencyMatrix.filter(row => row.active).map(row => row.area), f.area])}
         onChange={value => setF(current => ({ ...current, area: value, department: "", factor: "", competency: "" }))} />
-      <Select label="Departamento" value={f.department} values={unique(orgUnits.filter(o => o.group_name === f.occupational_group && o.area_name === f.area).map(o => o.department_name))}
+      <Select label="Departamento" value={f.department} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area)).map(o => o.department_name), ...competencyMatrix.filter(row => row.active && norm(row.area) === norm(f.area)).map(row => row.department), f.department])}
         onChange={value => setF(current => ({ ...current, department: value, factor: "", competency: "" }))} />
+      {competencyGroup(competencyMatrix, f) ? <label>Grupo ocupacional<input value={assignedGroup} readOnly /><small>Asignado según área, departamento, factor y competencia de la matriz vigente.</small></label> :
+        <Select label="Grupo ocupacional (sin relación activa en la matriz)" value={f.occupational_group} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area) && norm(o.department_name) === norm(f.department)).map(o => o.group_name), f.occupational_group])} onChange={value => set("occupational_group", value)} />}
     </div></details>}
     <div className="need-essential">
       <section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Seleccione la competencia que necesita fortalecer en su departamento.</p><div className="fields">

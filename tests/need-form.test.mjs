@@ -29,3 +29,16 @@ test('editing keeps the original period and saves optional planning without an e
   assert.equal(payload.quarter, null);
   assert.equal(payload.period_id, undefined, 'editing must not reassign the historical period');
 });
+
+for (const role of ['admin', 'user']) test(`${role}: group assignment respects the competency relationship without changing profile permissions`, async () => {
+  let payload;
+  const profile = { role, occupational_group: 'Profesional', area: fields.area, department: fields.department };
+  const relation = { area: fields.area, department: fields.department, factor: fields.factor, competency: fields.competency, group_name: 'JEFATURAS', active: true };
+  const query = { eq() { return this; }, select() { return this; }, async maybeSingle() { return { data: { id: fields.id }, error: null }; } };
+  const context = { module: { exports: {} }, exports: {}, __database: { from() { return { update(values) { payload = values; return query; } }; } }, require(name) { return name === 'react' ? { useState(value) { return [value, () => {}]; } } : require(name); } };
+  vm.runInNewContext(compiled.outputFiles[0].text, context);
+  const form = context.module.exports.NeedForm({ catalogs: [], competencyMatrix: [relation], orgUnits: [], profile, userId: 'owner', initialNeed: fields, onDone() {} });
+  await form.props.onSubmit({ preventDefault() {} });
+  assert.equal(payload.occupational_group, role === 'admin' ? 'JEFATURAS' : 'Profesional');
+  assert.equal(profile.occupational_group, 'Profesional');
+});

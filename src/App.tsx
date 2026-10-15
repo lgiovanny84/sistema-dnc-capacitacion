@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { configured, supabase } from "./supabase";
 import {
@@ -13,6 +13,7 @@ import { CollapsibleTable } from "./CollapsibleTable";
 import { Input, Select } from "./FormFields";
 import { NeedForm } from "./NeedForm";
 import type { Role, Need, PlanningPeriod, Catalog, Profile, OrgUnit } from "./needTypes";
+import { competencyGroup, needWithCompetencyGroup } from "./competencyAssignment";
 import { needReportColumns, needReportValue, validatePlanning, planningValues } from "./needPlanning";
 type CorrectionRequest = {
   id: string;
@@ -97,6 +98,7 @@ export default function App() {
     [profile, setProfile] = useState<Profile | null>(null),
     [loading, setLoading] = useState(true),
     [notice, setNotice] = useState(""),
+    [configurationPending, setConfigurationPending] = useState(0),
     [accessBlocked, setAccessBlocked] = useState(false),
     [recovery, setRecovery] = useState(false),
     [filters, setFilters] = useState({
@@ -104,14 +106,32 @@ export default function App() {
       factor: "",
       status: "",
       area: "",
+      department: "",
+      occupational_group: "",
     });
+  const authUserId = useRef<string | null>(null);
+  const loadVersion = useRef(0);
+  useEffect(() => {
+    if (!configurationPending) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [configurationPending]);
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth.getSession().then(({ data }) => { authUserId.current = data.session?.user.id ?? null; setSession(data.session); });
     const { data } = supabase.auth.onAuthStateChange((event, s) => {
+      if ((s?.user.id ?? null) !== authUserId.current) {
+        setLoading(true);
+        authUserId.current = s?.user.id ?? null;
+        setProfile(null); setRole("user"); setNeeds([]); setCatalogs(fallback);
+        setOrgUnits([]); setCompetencyMatrix([]); setPeriods([]);
+        setTrainingRecords([]); setBudgetAllocations([]); setImportBatches([]);
+        setConfigurationPending(0); setAccessBlocked(false);
+      }
       setSession(s);
       if (event === "PASSWORD_RECOVERY") setRecovery(true);
     });
@@ -119,79 +139,91 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (session && supabase && !recovery) void load();
-  }, [session, recovery]);
+  }, [session?.user.id, recovery]);
   async function load() {
-    setLoading(true);
-    const [
-      { data: n, error: ne },
-      { data: c, error: ce },
-      { data: p, error: pe },
-      { data: o, error: oe },
-      { data: periodData, error: periodError },
-      { data: matrixData, error: matrixError },
-    ] = await Promise.all([
-      supabase!
-        .from("training_needs")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase!.from("catalogs").select("*").order("name"),
-      supabase!
-        .from("profiles")
-        .select("*")
-        .eq("id", session!.user.id)
-        .single(),
-      supabase!
-        .from("organizational_structure")
-        .select("*")
-        .eq("active", true)
-        .order("group_name")
-        .order("area_name")
-        .order("department_name"),
-      supabase!.from("planning_periods").select("*").order("start_date", { ascending: false }),
-      fetchCompetencyMatrix(),
-    ]);
-    const firstError = ne || ce || pe || oe || periodError || matrixError;
-    setNotice(
-      firstError
-        ? `No fue posible cargar los datos: ${firstError.message}`
-        : "",
-    );
-    setNeeds((n ?? []) as Need[]);
-    setCatalogs(c?.length ? (c as Catalog[]) : fallback);
-    setRole((p?.role as Role) || "user");
-    setProfile((p as Profile) ?? null);
-    setAccessBlocked(Boolean(p && (!p.active || p.deleted_at)));
-    setOrgUnits((o ?? []) as OrgUnit[]);
-    setCompetencyMatrix(matrixData ?? []);
-    const loadedPeriods = (periodData ?? []) as PlanningPeriod[];
-    setPeriods(loadedPeriods);
-    setSelectedPeriodId((current) => {
-      const selectable = p?.role === "admin" ? loadedPeriods : loadedPeriods.filter((period) => period.active);
-      const selected = selectable.find((period) => period.id === current) ?? selectable.find((period) => new Date().toISOString().slice(0, 10) >= period.start_date && new Date().toISOString().slice(0, 10) <= period.end_date) ?? selectable[0];
-      const next = selected?.id ?? "";
-      if (next) localStorage.setItem("dnc-period-id", next);
-      return next;
-    });
-    if (p?.role === "admin") {
-      const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
-        await Promise.all([
-          supabase!.from("training_records").select("*").order("start_date", { ascending: false }),
-          supabase!.from("department_budgets").select("*").order("year", { ascending: false }).order("department_name"),
-          supabase!.from("training_import_batches").select("*").order("uploaded_at", { ascending: false }),
-        ]);
-      if (executedError || allocationsError || batchesError) {
-        setNotice(`No fue posible cargar la ejecución de capacitación: ${(executedError || allocationsError || batchesError)?.message}`);
-      } else {
-        setTrainingRecords((executed ?? []) as TrainingRecord[]);
-        setBudgetAllocations((allocations ?? []) as BudgetAllocation[]);
-        setImportBatches((batches ?? []) as ImportBatch[]);
+    // Initial authentication uses Loading. Data refreshes keep the current workspace mounted.
+    const request = ++loadVersion.current;
+    try {
+      const [
+        { data: n, error: ne },
+        { data: c, error: ce },
+        { data: p, error: pe },
+        { data: o, error: oe },
+        { data: periodData, error: periodError },
+        { data: matrixData, error: matrixError },
+      ] = await Promise.all([
+        supabase!
+          .from("training_needs")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase!.from("catalogs").select("*").order("name"),
+        supabase!
+          .from("profiles")
+          .select("*")
+          .eq("id", session!.user.id)
+          .single(),
+        supabase!
+          .from("organizational_structure")
+          .select("*")
+          .eq("active", true)
+          .order("group_name")
+          .order("area_name")
+          .order("department_name"),
+        supabase!.from("planning_periods").select("*").order("start_date", { ascending: false }),
+        fetchCompetencyMatrix(),
+      ]);
+      if (request !== loadVersion.current || session?.user.id !== authUserId.current) return;
+      const firstError = ne || ce || pe || oe || periodError || matrixError;
+      setNotice(
+        firstError
+          ? `No fue posible cargar los datos: ${firstError.message}`
+          : "",
+      );
+      if (!ne) setNeeds((n ?? []) as Need[]);
+      if (!ce) setCatalogs(c?.length ? (c as Catalog[]) : fallback);
+      if (!pe) {
+        setRole((p?.role as Role) || "user");
+        setProfile((p as Profile) ?? null);
+        setAccessBlocked(Boolean(p && (!p.active || p.deleted_at)));
       }
-    } else {
-      setTrainingRecords([]);
-      setBudgetAllocations([]);
-      setImportBatches([]);
+      if (!oe) setOrgUnits((o ?? []) as OrgUnit[]);
+      if (!matrixError) setCompetencyMatrix(matrixData ?? []);
+      if (!periodError && !pe) {
+        const loadedPeriods = (periodData ?? []) as PlanningPeriod[];
+        setPeriods(loadedPeriods);
+        setSelectedPeriodId((current) => {
+          const selectable = p?.role === "admin" ? loadedPeriods : loadedPeriods.filter((period) => period.active);
+          const selected = selectable.find((period) => period.id === current) ?? selectable.find((period) => new Date().toISOString().slice(0, 10) >= period.start_date && new Date().toISOString().slice(0, 10) <= period.end_date) ?? selectable[0];
+          const next = selected?.id ?? "";
+          if (next) localStorage.setItem("dnc-period-id", next);
+          return next;
+        });
+      }
+      if (p?.role === "admin") {
+        const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
+          await Promise.all([
+            supabase!.from("training_records").select("*").order("start_date", { ascending: false }),
+            supabase!.from("department_budgets").select("*").order("year", { ascending: false }).order("department_name"),
+            supabase!.from("training_import_batches").select("*").order("uploaded_at", { ascending: false }),
+          ]);
+        if (request !== loadVersion.current || session?.user.id !== authUserId.current) return;
+        if (executedError || allocationsError || batchesError) {
+          setNotice(`No fue posible cargar la ejecución de capacitación: ${(executedError || allocationsError || batchesError)?.message}`);
+        } else {
+          setTrainingRecords((executed ?? []) as TrainingRecord[]);
+          setBudgetAllocations((allocations ?? []) as BudgetAllocation[]);
+          setImportBatches((batches ?? []) as ImportBatch[]);
+        }
+      } else if (!pe) {
+        setTrainingRecords([]);
+        setBudgetAllocations([]);
+        setImportBatches([]);
+      }
+    } catch {
+      if (request === loadVersion.current) setNotice("No se pudo actualizar la información. Revise la conexión e intente nuevamente; los cambios pendientes se conservan.");
+    } finally {
+      if (request === loadVersion.current) setLoading(false);
     }
-    setLoading(false);
   }
   if (!configured) return <Setup />;
   if (recovery && session)
@@ -212,7 +244,7 @@ export default function App() {
     );
   const selectablePeriods = role === "admin" ? periods : periods.filter((period) => period.active);
   const activePeriod = selectablePeriods.find((period) => period.id === selectedPeriodId) ?? selectablePeriods[0];
-  const periodNeeds = activePeriod ? needs.filter((need) => need.period_id === activePeriod.id) : [];
+  const periodNeeds = activePeriod ? needs.filter((need) => need.period_id === activePeriod.id).map(need => needWithCompetencyGroup(need, competencyMatrix)) : [];
   const periodRecords = activePeriod ? trainingRecords.filter((record) => record.period_id === activePeriod.id) : [];
   const periodBatches = activePeriod ? importBatches.filter((batch) => batch.period_id === activePeriod.id) : [];
   const periodBudgets = activePeriod ? budgetAllocations.filter((allocation) => allocation.period_id === activePeriod.id) : [];
@@ -221,7 +253,9 @@ export default function App() {
       (!filters.type || n.type === filters.type) &&
       (!filters.factor || n.factor === filters.factor) &&
       (!filters.status || n.status === filters.status) &&
-      (!filters.area || n.area === filters.area),
+      (!filters.area || n.area === filters.area) &&
+      (!filters.department || n.department === filters.department) &&
+      (!filters.occupational_group || n.occupational_group === filters.occupational_group),
   );
   const totalHours = visible.reduce(
       (s, n) => s + Number(n.hours) * Number(n.participants),
@@ -236,10 +270,14 @@ export default function App() {
       const matrixFactors = unique(competencyMatrix.filter((row) => row.active).map((row) => row.factor));
       return matrixFactors.length ? matrixFactors : catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
     }
-    if (kind === "occupational_group")
-      return unique(orgUnits.map((o) => o.group_name));
+    if (kind === "occupational_group" || kind === "department")
+      return unique(periodNeeds.filter(n => !filters.area || n.area === filters.area).filter(n => kind === "department" || !filters.department || n.department === filters.department).map(n => n[kind]));
     return catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
   };
+  function navigate(next: string) {
+    if (next !== tab && configurationPending && !window.confirm("Tiene cambios de configuración sin guardar. ¿Salir y descartarlos?")) return;
+    setTab(next);
+  }
   function exportCSV() {
     const csv =
       "\ufeff" +
@@ -271,7 +309,7 @@ export default function App() {
         >
           {menuCollapsed ? "›" : "‹"}
         </button>
-        <button className="brand" onClick={() => setTab("dashboard")} aria-label="Ir al inicio">
+        <button className="brand" onClick={() => navigate("dashboard")} aria-label="Ir al inicio">
           <img className="brand-full" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
           <img className="brand-icon" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
           <small>Gestión Integral de Capacitación</small>
@@ -287,7 +325,7 @@ export default function App() {
           ].map(([id, label]) => (
             <button
               className={tab === id ? "active" : ""}
-              onClick={() => setTab(id)}
+              onClick={() => navigate(id)}
               key={id}
             >
               <NavIcon name={id} />
@@ -381,9 +419,9 @@ export default function App() {
               departments={unique(orgUnits.map((unit) => unit.department_name))}
               reload={load}
             /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
-        ) : (
-          <Admin catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
-        )}
+        ) : tab === "admin" && role === "admin" ? (
+          <Admin onPendingChange={setConfigurationPending} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
+        ) : <div className="alert">No tiene acceso a esta sección.</div>}
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
           trazabilidad
@@ -796,6 +834,7 @@ function MiniTable({
             <th>Factor</th>
             <th>Área</th>
             <th>Departamento</th>
+            <th title="Según la relación activa de área, departamento, factor y competencia; sin coincidencia se conserva el grupo registrado.">Grupo ocupacional</th>
             <th>Cargo</th>
             <th>Tipo</th>
             <th>Prioridad</th>
@@ -815,6 +854,7 @@ function MiniTable({
               <td>{n.factor}</td>
               <td>{n.area}</td>
               <td>{n.department}</td>
+              <td><span className="group-badge">{n.occupational_group || "Sin asignar"}</span></td>
               <td>{n.position || "—"}</td>
               <td>{n.type}</td>
               <td>
@@ -994,7 +1034,7 @@ function List({
             .map((n) => (
               <div key={n.id}>
                 <span>
-                  {n.competency} · {n.area}
+                  {n.competency} · {n.area} · {n.department} · {n.occupational_group}
                 </span>
                 <button onClick={() => status(n.id, "Aprobada")}>
                   Aprobar
@@ -1030,7 +1070,7 @@ function Reports({
   exportCSV: () => void;
 }) {
   const set = (k: string, v: string) =>
-    setFilters((x: any) => ({ ...x, [k]: v }));
+    setFilters((x: any) => ({ ...x, [k]: v, ...(k === "area" ? { department: "", occupational_group: "" } : k === "department" ? { occupational_group: "" } : {}) }));
   return (
     <>
       <div className="report-heading">
@@ -1059,6 +1099,8 @@ function Reports({
           values={options("area")}
           onChange={(v) => set("area", v)}
         />
+        <Select label="Departamento" value={filters.department} values={options("department")} onChange={v => set("department", v)} />
+        <Select label="Grupo ocupacional" value={filters.occupational_group} values={options("occupational_group")} onChange={v => set("occupational_group", v)} />
         <Select
           label="Estado"
           value={filters.status}
@@ -1075,7 +1117,7 @@ function Reports({
         <button
           className="secondary"
           onClick={() =>
-            setFilters({ type: "", factor: "", status: "", area: "" })
+            setFilters({ type: "", factor: "", status: "", area: "", department: "", occupational_group: "" })
           }
         >
           Limpiar
@@ -1103,6 +1145,7 @@ function Reports({
           <Bars needs={needs} field="priority" />
         </div>
       </section>
+      <div className="panel"><h2>Por grupo ocupacional</h2><Bars needs={needs} field="occupational_group" /></div>
       <div className="panel">
         <div className="panelhead">
           <h2>Detalle para toma de decisiones</h2>
@@ -1169,6 +1212,7 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
 }
 
 function Admin({
+  onPendingChange,
   catalogs,
   competencyMatrix,
   orgUnits,
@@ -1178,6 +1222,7 @@ function Admin({
   currentUserId,
   reload,
 }: {
+  onPendingChange: (count: number) => void;
   catalogs: Catalog[];
   competencyMatrix: CompetencyMatrixRow[];
   orgUnits: OrgUnit[];
@@ -1187,6 +1232,8 @@ function Admin({
   currentUserId: string;
   reload: () => Promise<void>;
 }) {
+  const [matrixPending, setMatrixPending] = useState(0);
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [section, setSection] = useState<"users" | "periods" | "matrix" | "requests" | "needs" | "catalogs" | "structure">("users"),
     [kind, setKind] = useState("factor"),
     [name, setName] = useState(""),
@@ -1204,6 +1251,16 @@ function Admin({
     [savingCatalogs, setSavingCatalogs] = useState(false),
     [sending, setSending] = useState(false),
     [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  useEffect(() => { onPendingChange(matrixPending + Object.keys(catalogDrafts).length + Object.keys(userDrafts).length); }, [matrixPending, catalogDrafts, userDrafts, onPendingChange]);
+  useEffect(() => () => onPendingChange(0), [onPendingChange]);
+  function changeSection(next: typeof section) {
+    if (next === section) return;
+    if (section === "matrix" && matrixPending) {
+      if (!window.confirm("La matriz tiene cambios sin guardar. ¿Cambiar de sección y descartarlos?")) return;
+      setMatrixPending(0);
+    }
+    setSection(next);
+  }
   useEffect(() => {
     void loadUsers();
   }, []);
@@ -1373,7 +1430,7 @@ function Admin({
     <>
       <div className="admin-workspace">
         <div className="admin-workspace-head">
-          <div><span className="eyebrow">CONFIGURACIÓN Y CONTROL</span><h2>Administración</h2><p>Seleccione una sección para gestionar la información.</p></div>
+          <div><span className="eyebrow">CONFIGURACIÓN Y CONTROL</span><h2>Administración</h2><p>Gestione una sección a la vez. Los controles de configuración son exclusivos del administrador.</p></div>
         </div>
         <nav className="admin-section-menu" aria-label="Secciones de administración">
           {([
@@ -1381,15 +1438,15 @@ function Admin({
             ["requests", "Solicitudes"], ["needs", "Necesidades"], ["catalogs", "Catálogos"],
             ["structure", "Estructura organizacional"],
           ] as const).map(([id, label]) => (
-            <button key={id} type="button" className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>{label}</button>
+            <button key={id} type="button" className={section === id ? "active" : ""} aria-current={section === id ? "page" : undefined} onClick={() => changeSection(id)}>{label}</button>
           ))}
         </nav>
       </div>
       {msg && <div className="statusmsg" role="status">{msg}</div>}
       {section === "periods" && <PeriodManager periods={periods} reload={reload} />}
-      {section === "matrix" && <CompetencyMatrixManager rows={competencyMatrix} reload={reload} />}
+      {section === "matrix" && <CompetencyMatrixManager rows={competencyMatrix} reload={reload} onPendingChange={setMatrixPending} />}
       {section === "requests" && <CorrectionRequests needs={needs} users={users} />}
-      {section === "needs" && <AdminNeeds needs={needs} period={period} reload={reload} />}
+      {section === "needs" && <AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} />}
       {section === "users" && editingUser && (
         <AdminUserEditor
           user={editingUser}
@@ -1529,12 +1586,7 @@ function Admin({
           asociados al administrador.
         </p>
         <form className="inline" onSubmit={add}>
-          <Select
-            label="Catálogo"
-            value={kind}
-            values={Object.keys(kinds)}
-            onChange={setKind}
-          />
+          <label>Catálogo<select value={kind} onChange={event => { setKind(event.target.value); setCatalogSearch(""); }}>{Object.entries(kinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
           <Input
             label="Nueva categoría"
             value={name}
@@ -1546,12 +1598,14 @@ function Admin({
       </div>}
       {section === "catalogs" && <div className="panel catalog">
         <div className="panelhead"><div><h2>Elementos configurados</h2><p>Edite nombres o estados y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(catalogDrafts).length || savingCatalogs} onClick={() => void saveCatalogChanges()}>{savingCatalogs ? "Guardando…" : `Guardar todos los cambios (${Object.keys(catalogDrafts).length})`}</button></div>
-        {Object.entries(kinds).map(([k, label]) => (
+        <div className="catalog-category-menu" aria-label="Tipos de catálogo">{Object.entries(kinds).map(([key, label]) => <button className={kind === key ? "active" : ""} onClick={() => { setKind(key); setCatalogSearch(""); }} key={key}>{label}<span>{catalogs.filter(c => c.kind === key).length}</span></button>)}</div>
+        <label className="catalog-search">Buscar en {kinds[kind].toLowerCase()}<input value={catalogSearch} onChange={event => setCatalogSearch(event.target.value)} placeholder="Escriba un nombre" /></label>
+        {Object.entries(kinds).filter(([key]) => key === kind).map(([k, label]) => (
           <div key={k}>
             <h3>{label}</h3>
             <div className="tags">
               {catalogs
-                .filter((c) => c.kind === k)
+                .filter((c) => c.kind === k && catalogDraft(c).name.toLocaleLowerCase("es").includes(catalogSearch.toLocaleLowerCase("es")))
                 .map((c) => (
                   <span className="catalog-item" key={c.id}>
                     <input value={catalogDraft(c).name} onChange={(e) => changeCatalog(c, { name: e.target.value })} aria-label={`Nombre de ${c.name}`} />
@@ -1761,7 +1815,7 @@ function AdminUserEditor({
   );
 }
 
-function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: PlanningPeriod; reload: () => Promise<void> }) {
+function AdminNeeds({ needs, competencyMatrix, period, reload }: { needs: Need[]; competencyMatrix: CompetencyMatrixRow[]; period?: PlanningPeriod; reload: () => Promise<void> }) {
   const [drafts, setDrafts] = useState<Record<string, { competency: string; estimated_cost: string; hours: string; planned_start_date: string; planned_end_date: string }>>({}),
     [savingAll, setSavingAll] = useState(false),
     [message, setMessage] = useState("");
@@ -1785,7 +1839,7 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
     if (invalid) { setMessage(invalid); return; }
     setSavingAll(true);
     const results = await Promise.all(entries.map(([id, d]) =>
-      supabase!.from("training_needs").update({ competency: d.competency.trim(), ...planningValues(d) }).eq("id", id),
+      supabase!.from("training_needs").update({ competency: d.competency.trim(), ...planningValues(d), occupational_group: competencyGroup(competencyMatrix, { ...needs.find(n => n.id === id)!, competency: d.competency }) ?? needs.find(n => n.id === id)!.occupational_group }).eq("id", id),
     ));
     setSavingAll(false);
     const error = results.find((result) => result.error)?.error;
@@ -1806,13 +1860,14 @@ function AdminNeeds({ needs, period, reload }: { needs: Need[]; period?: Plannin
       <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
       {message && <div className="statusmsg">{message}</div>}
       <CollapsibleTable className="admin-needs"><table>
-        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Horas por participante</th><th>Costo estimado (USD)</th><th>Acciones</th></tr></thead>
+        <thead><tr><th>Tema / competencia</th><th>Área</th><th>Departamento</th><th>Grupo ocupacional</th><th>Fecha inicio</th><th>Fecha fin</th><th>Trimestre</th><th>Horas por participante</th><th>Costo estimado (USD)</th><th>Acciones</th></tr></thead>
         <tbody>{needs.map((n) => {
           const d = draft(n);
           return <tr key={n.id}>
             <td><input value={d.competency} onChange={(e) => change(n, { competency: e.target.value })} /></td>
             <td>{n.area}</td>
             <td>{n.department}</td>
+            <td><span className="group-badge">{competencyGroup(competencyMatrix, { ...n, competency: d.competency }) ?? n.occupational_group}</span></td>
             <td><input type="date" min={period?.start_date} max={period?.end_date} value={d.planned_start_date} onChange={(e) => changeDate(n, e.target.value)} /></td>
             <td><input type="date" min={d.planned_start_date || period?.start_date} max={period?.end_date} value={d.planned_end_date} onChange={(e) => change(n, { planned_end_date: e.target.value })} /></td>
             <td>{d.planned_start_date ? `Trimestre ${Math.ceil(Number(d.planned_start_date.slice(5, 7)) / 3)}` : "Por planificar"}</td>
