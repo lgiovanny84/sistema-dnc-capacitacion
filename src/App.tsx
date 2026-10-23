@@ -315,7 +315,7 @@ export default function App() {
           <img className="brand-icon" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" />
           <small>Gestión Integral de Capacitación</small>
         </button>
-        <nav>
+        <nav aria-label="Navegación principal">
           {[
             ["dashboard", "Resumen"],
             ["new", "Nueva necesidad"],
@@ -326,6 +326,9 @@ export default function App() {
           ].map(([id, label]) => (
             <button
               className={tab === id ? "active" : ""}
+              aria-label={label}
+              aria-current={tab === id ? "page" : undefined}
+              title={menuCollapsed ? label : undefined}
               onClick={() => navigate(id)}
               key={id}
             >
@@ -784,7 +787,7 @@ function Card({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="card">
       <small>{label}</small>
-      <strong>{value}</strong>
+      <strong className={typeof value === "string" && !/\d/.test(value) ? "metric-text" : undefined}>{value}</strong>
     </div>
   );
 }

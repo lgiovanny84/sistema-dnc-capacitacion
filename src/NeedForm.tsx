@@ -42,7 +42,18 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
   const factors = unique(departmentMatrix.map(row => row.factor));
   const competencies = unique(departmentMatrix.filter(row => norm(row.factor) === norm(f.factor)).map(row => row.competency));
   if (f.factor && !factors.some(value => norm(value) === norm(f.factor))) factors.push(f.factor);
-  if (f.competency && !competencies.some(value => norm(value) === norm(f.competency))) competencies.push(f.competency);
+  const availableCompetencies = competencies.length ? competencies : departmentMatrix.length ? [] : opts("competency");
+  const initiallyManual = Boolean(initialNeed?.competency && !availableCompetencies.includes(initialNeed.competency));
+  const [topicEntry, setTopicEntry] = useState({ manual: initiallyManual, catalog: initiallyManual ? "" : initialNeed?.competency ?? "", custom: initiallyManual ? initialNeed!.competency : "" });
+  function chooseTopicMode(manual: boolean) {
+    setTopicEntry(current => ({ ...current, manual }));
+    set("competency", manual ? topicEntry.custom : topicEntry.catalog);
+  }
+  function changeTopic(value: string) {
+    setTopicEntry(current => ({ ...current, [current.manual ? "custom" : "catalog"]: value }));
+    set("competency", value);
+  }
+  function resetTopic() { setTopicEntry(current => ({ manual: current.manual, catalog: "", custom: "" })); }
   const locked = profile?.role !== "admin";
   const assignedGroup = (!locked && competencyGroup(competencyMatrix, f)) || f.occupational_group;
   const justificationRequired = !initialNeed || Boolean(initialNeed.priority_reason) || initialNeed.priority !== f.priority;
@@ -60,7 +71,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     if (planningError) { setPlanningOpen(true); setError(planningError); return; }
     setSaving(true);
     try {
-      const values = { ...f, occupational_group: assignedGroup, ...planningValues(f), gap: f.gap.trim(), objective: f.objective.trim(), position: f.position.trim(),
+      const values = { ...f, competency: f.competency.trim(), occupational_group: assignedGroup, ...planningValues(f), gap: f.gap.trim(), objective: f.objective.trim(), position: f.position.trim(),
         indicator: f.indicator.trim(), goal: f.goal.trim(), evidence: f.evidence.trim(), priority_reason: f.priority_reason.trim() };
       const result = initialNeed
         ? await supabase!.from("training_needs").update(values).eq("id", initialNeed.id).select("id").maybeSingle()
@@ -84,16 +95,19 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     </dl>
     {!locked && <details className="need-assignment"><summary>Cambiar asignación organizacional</summary><div className="fields">
       <Select label="Área" value={f.area} values={unique([...orgUnits.map(o => o.area_name), ...competencyMatrix.filter(row => row.active).map(row => row.area), f.area])}
-        onChange={value => setF(current => ({ ...current, area: value, department: "", factor: "", competency: "" }))} />
+        onChange={value => { resetTopic(); setF(current => ({ ...current, area: value, department: "", factor: "", competency: "" })); }} />
       <Select label="Departamento" value={f.department} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area)).map(o => o.department_name), ...competencyMatrix.filter(row => row.active && norm(row.area) === norm(f.area)).map(row => row.department), f.department])}
-        onChange={value => setF(current => ({ ...current, department: value, factor: "", competency: "" }))} />
+        onChange={value => { resetTopic(); setF(current => ({ ...current, department: value, factor: "", competency: "" })); }} />
       {competencyGroup(competencyMatrix, f) ? <label>Grupo ocupacional<input value={assignedGroup} readOnly /><small>Asignado según área, departamento, factor y competencia de la matriz vigente.</small></label> :
         <Select label="Grupo ocupacional (sin relación activa en la matriz)" value={f.occupational_group} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area) && norm(o.department_name) === norm(f.department)).map(o => o.group_name), f.occupational_group])} onChange={value => set("occupational_group", value)} />}
     </div></details>}
     <div className="need-essential">
-      <section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Seleccione la competencia que necesita fortalecer en su departamento.</p><div className="fields">
-        <Select label="Factor" value={f.factor} values={factors.length ? factors : opts("factor")} onChange={value => setF(current => ({ ...current, factor: value, competency: "" }))} required />
-        <Select label="Competencia a desarrollar" value={f.competency} values={competencies.length ? competencies : departmentMatrix.length ? [] : opts("competency")} onChange={value => set("competency", value)} required />
+      <section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Elija una competencia de su departamento o proponga un tema que no aparezca en la lista.</p><div className="fields">
+        <Select label="Factor" value={f.factor} values={factors.length ? factors : opts("factor")} onChange={value => { resetTopic(); setF(current => ({ ...current, factor: value, competency: "" })); }} required />
+        <div className="topic-entry">
+          <div className="topic-mode" role="group" aria-label="Forma de registrar la competencia"><button type="button" aria-pressed={!topicEntry.manual} onClick={() => chooseTopicMode(false)}>Seleccionar de la lista</button><button type="button" aria-pressed={topicEntry.manual} onClick={() => chooseTopicMode(true)}>Mi tema no aparece</button></div>
+          {topicEntry.manual ? <label>Tema o competencia propuesta<input value={f.competency} onChange={event => changeTopic(event.target.value)} required placeholder="Ej.: análisis de datos para la gestión de cartera" /><small>Se guardará en esta necesidad para revisión del administrador. La incorporación a la matriz se realiza desde Administración.</small></label> : <><Select label="Competencia a desarrollar" value={f.competency} values={availableCompetencies} onChange={changeTopic} required />{!availableCompetencies.length && <p className="topic-hint">Seleccione un factor. Si su tema no está disponible, use «Mi tema no aparece».</p>}</>}
+        </div>
       </div></section>
       <section className="need-block"><h3><span>02</span> Brecha identificada</h3><div className="fields"><label className="full">Brecha identificada / Necesidad identificada
         <textarea value={f.gap} onChange={e => set("gap", e.target.value)} rows={3} required placeholder="¿Qué ocurre actualmente, qué evidencia tiene y cómo afecta al trabajo?" />
@@ -131,7 +145,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       </div></div>
     </details>
     {error && <div className="error" role="alert">{error}</div>}
-    <div className="actions"><button type="button" className="secondary" disabled={saving} onClick={() => { if (initialNeed) onCancel?.(); else { setF(initialForm); setPlanningOpen(false); setError(""); } }}>{initialNeed ? "Cancelar" : "Limpiar"}</button>
+    <div className="actions"><button type="button" className="secondary" disabled={saving} onClick={() => { if (initialNeed) onCancel?.(); else { setF(initialForm); setTopicEntry({ manual: false, catalog: "", custom: "" }); setPlanningOpen(false); setError(""); } }}>{initialNeed ? "Cancelar" : "Limpiar"}</button>
       <button className="primary" disabled={saving}>{saving ? "Guardando…" : initialNeed ? "Guardar cambios" : "Registrar necesidad"}</button></div>
   </form>;
 }
