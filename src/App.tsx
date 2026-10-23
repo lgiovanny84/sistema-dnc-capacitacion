@@ -12,6 +12,7 @@ import { CompetencyMatrixManager, CompetencyMatrixRow } from "./competencyMatrix
 import { CollapsibleTable } from "./CollapsibleTable";
 import { Input, Select } from "./FormFields";
 import { NeedForm } from "./NeedForm";
+import { Modal } from "./Modal";
 import type { Role, Need, PlanningPeriod, Catalog, Profile, OrgUnit } from "./needTypes";
 import { competencyGroup, needWithCompetencyGroup } from "./competencyAssignment";
 import { needReportColumns, needReportValue, validatePlanning, planningValues } from "./needPlanning";
@@ -913,6 +914,8 @@ function List({
   userId: string;
   period?: PlanningPeriod;
 }) {
+  const [editDirty, setEditDirty] = useState(false), [editBusy, setEditBusy] = useState(false);
+  function closeEditor() { if (!editBusy && (!editDirty || window.confirm("Tiene cambios sin guardar. ¿Cerrar la ventana y descartarlos?"))) { setEditing(null); setEditDirty(false); } }
   const [editing, setEditing] = useState<Need | null>(null),
     [requesting, setRequesting] = useState<Need | null>(null),
     [requestedField, setRequestedField] = useState(""),
@@ -956,26 +959,13 @@ function List({
       setExplanation("");
     }
   }
-  if (editing) {
-    return (
-      <NeedForm
-        catalogs={catalogs}
-        competencyMatrix={competencyMatrix}
-        orgUnits={orgUnits}
-        profile={profile}
-        userId={userId}
-        initialNeed={editing}
-        period={period}
-        onCancel={() => setEditing(null)}
-        onDone={async () => {
-          await reload();
-          setEditing(null);
-        }}
-      />
-    );
-  }
   return (
     <div className="panel">
+      {editing && role === "admin" && <Modal title="Modificar necesidad de capacitación" busy={editBusy} onClose={closeEditor}>
+        <NeedForm catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={userId} initialNeed={editing} period={period}
+          onDirtyChange={setEditDirty} onSavingChange={setEditBusy} onCancel={closeEditor}
+          onDone={async () => { await reload(); setEditing(null); setEditDirty(false); }} />
+      </Modal>}
       <div className="panelhead">
         <h2>Matriz consolidada</h2>
         <span>{needs.length} registros visibles</span>
@@ -1243,7 +1233,7 @@ function Admin({
     [fullName, setFullName] = useState(""),
     [newUsername, setNewUsername] = useState(""),
     [newRole, setNewRole] = useState<Role>("user"),
-    [invitation, setInvitation] = useState<{ email: string; username: string; temporaryPassword: string; loginUrl: string } | null>(null),
+    [invitation, setInvitation] = useState<{ email: string; username: string; temporaryPassword: string; temporaryPasswordExpiresAt?: string; loginUrl: string } | null>(null),
     [editingUser, setEditingUser] = useState<Profile | null>(null),
     [userDrafts, setUserDrafts] = useState<Record<string, Partial<Profile>>>({}),
     [catalogDrafts, setCatalogDrafts] = useState<Record<string, { name: string; active: boolean }>>({}),
@@ -1336,7 +1326,7 @@ function Admin({
       setMsg(`No se pudo crear el usuario: ${detail}`);
     } else {
       setMsg("Usuario creado. Comparta los datos de ingreso; la clave temporal solo se muestra aquí.");
-      setInvitation({ email: email.trim(), username: data.username, temporaryPassword: data.temporaryPassword, loginUrl: data.loginUrl });
+      setInvitation({ email: email.trim(), username: data.username, temporaryPassword: data.temporaryPassword, temporaryPasswordExpiresAt: data.temporaryPasswordExpiresAt, loginUrl: data.loginUrl });
       setEmail("");
       setFullName("");
       setNewUsername("");
@@ -1381,7 +1371,7 @@ function Admin({
         setMsg(detail);
         return;
       }
-      setInvitation({ email: data.email || user.email, username: data.username, temporaryPassword: data.temporaryPassword, loginUrl: data.loginUrl });
+      setInvitation({ email: data.email || user.email, username: data.username, temporaryPassword: data.temporaryPassword, temporaryPasswordExpiresAt: data.temporaryPasswordExpiresAt, loginUrl: data.loginUrl });
       setMsg(data.active ? "Clave temporal generada y validada. Comparta los datos de ingreso." : "Clave temporal generada y validada. Active el usuario y guarde todos los cambios para permitir su ingreso.");
       await loadUsers();
     } catch {
@@ -1492,10 +1482,11 @@ function Admin({
           <p><strong>Enlace:</strong> <a href={invitation.loginUrl} target="_blank" rel="noreferrer">{invitation.loginUrl}</a></p>
           <p><strong>Usuario:</strong> {invitation.username}</p>
           <p><strong>Clave temporal:</strong> <code>{invitation.temporaryPassword}</code></p>
+          {invitation.temporaryPasswordExpiresAt && <p><strong>Válida hasta:</strong> {new Date(invitation.temporaryPasswordExpiresAt).toLocaleString("es-EC", { timeZone: "America/Guayaquil" })} · Al ingresar deberá cambiarla.</p>}
           <p>Al ingresar, la persona deberá crear una contraseña propia. El correo quedará para recuperación.</p>
           <div className="actions">
-            <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(`Sistema de Gestión Integral de Capacitación\nEnlace: ${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\nAl ingresar, cambie la clave temporal.`).then(() => setMsg("Datos de ingreso copiados."), () => setMsg("No se pudo copiar; use los datos visibles."))}>Copiar datos de ingreso</button>
-            <a className="secondary" href={`mailto:${encodeURIComponent(invitation.email)}?subject=${encodeURIComponent("Acceso al Sistema de Gestión Integral de Capacitación")}&body=${encodeURIComponent(`Hola,\n\nPuede ingresar al Sistema de Gestión Integral de Capacitación con estos datos:\n${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\n\nEn el primer ingreso deberá crear una contraseña propia.\n`)}`}>Preparar correo</a>
+            <button type="button" className="secondary" onClick={() => void navigator.clipboard.writeText(`Sistema de Gestión Integral de Capacitación\nEnlace: ${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\n${invitation.temporaryPasswordExpiresAt ? `Válida hasta: ${new Date(invitation.temporaryPasswordExpiresAt).toLocaleString("es-EC", { timeZone: "America/Guayaquil" })}\n` : ""}Al ingresar, cambie la clave temporal.`).then(() => setMsg("Datos de ingreso copiados."), () => setMsg("No se pudo copiar; use los datos visibles."))}>Copiar datos de ingreso</button>
+            <a className="secondary" href={`mailto:${encodeURIComponent(invitation.email)}?subject=${encodeURIComponent("Acceso al Sistema de Gestión Integral de Capacitación")}&body=${encodeURIComponent(`Hola,\n\nPuede ingresar al Sistema de Gestión Integral de Capacitación con estos datos:\n${invitation.loginUrl}\nUsuario: ${invitation.username}\nClave temporal: ${invitation.temporaryPassword}\n${invitation.temporaryPasswordExpiresAt ? `Válida hasta: ${new Date(invitation.temporaryPasswordExpiresAt).toLocaleString("es-EC", { timeZone: "America/Guayaquil" })}\n` : ""}\nEn el primer ingreso deberá crear una contraseña propia.\n`)}`}>Preparar correo</a>
             <button type="button" className="linkbutton" onClick={() => setInvitation(null)}>Ocultar clave</button>
           </div>
         </div>}

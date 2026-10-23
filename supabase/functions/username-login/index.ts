@@ -1,14 +1,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { temporaryPasswordExpired, loginBucketHash } from "../_shared/authSecurity.ts";
+
 const cors = {
   "Access-Control-Allow-Origin": "https://sistema-dnc-capacitacion.vercel.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function response(body: unknown, status = 200) {
+function response(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store", ...extraHeaders },
   });
 }
 
@@ -44,13 +46,26 @@ export default {
       const admin = createClient(url, serviceKey, {
         auth: { persistSession: false },
       });
+      // The gateway's last forwarded address is supplemental. Account and
+      // global buckets remain effective even when an origin header is absent/spoofed.
+      const origin = request.headers.get("x-forwarded-for")?.split(",").at(-1)?.trim().slice(0, 128) || "unknown";
+      const [accountHash, originHash] = await Promise.all([
+        loginBucketHash(serviceKey, `account:${username}`), loginBucketHash(serviceKey, `origin:${origin}`),
+      ]);
+      const { data: limit, error: limitError } = await admin.rpc("consume_login_attempt", { p_account_hash: accountHash, p_origin_hash: originHash });
+      if (limitError || !limit || typeof limit.allowed !== "boolean")
+        return response({ error: "Servicio de ingreso no disponible." }, 503);
+      if (!limit.allowed) {
+        const retryAfter = Math.max(1, Math.min(600, Number(limit.retry_after) || 600));
+        return response({ error: `Demasiados intentos. Vuelva a intentarlo en ${Math.ceil(retryAfter / 60)} minutos.` }, 429, { "Retry-After": String(retryAfter) });
+      }
       const { data: profile, error: lookupError } = await admin.from("profiles")
-        .select("id,email,active,deleted_at").eq("username", username).maybeSingle();
+        .select("id,email,active,deleted_at,must_change_password,temporary_password_expires_at").eq("username", username).maybeSingle();
       if (lookupError) {
         console.error("username-login: profile lookup failed", { lookupCode: lookupError.code });
         return response({ error: "Servicio de ingreso no disponible." }, 503);
       }
-      if (!profile || !profile.active || profile.deleted_at) {
+      if (!profile || !profile.active || profile.deleted_at || temporaryPasswordExpired(profile)) {
         return response({ error: "Credenciales inválidas." }, 401);
       }
 

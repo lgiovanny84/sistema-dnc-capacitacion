@@ -3,17 +3,20 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { webcrypto } from 'node:crypto';
+import { authSecurity } from './helpers/auth-security.mjs';
 
 const source = readFileSync(new URL('../supabase/functions/username-login/index.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 
-function handler({ lookupError = null, profile = { id: 'account', email: 'account@example.test', active: true, deleted_at: null }, authError = null, userId = 'account', missingEnv = false } = {}) {
+function handler({ lookupError = null, profile = { id: 'account', email: 'account@example.test', active: true, deleted_at: null }, authError = null, userId = 'account', missingEnv = false, rateAllowed = true, rateFails = false } = {}) {
   let authCalls = 0;
   let lookupUsername;
   const logs = [];
   const client = {
+    rpc: async () => ({ data: rateFails ? null : { allowed: rateAllowed, retry_after: 120 }, error: rateFails ? {message:'unavailable'} : null }),
     from: () => ({ select: () => ({ eq: (_key, value) => {
       lookupUsername = value;
       return { maybeSingle: async () => ({ data: profile, error: lookupError }) };
@@ -27,7 +30,7 @@ function handler({ lookupError = null, profile = { id: 'account', email: 'accoun
     exports: {}, Request, Response,
     Deno: { env: { get: () => missingEnv ? undefined : 'test-config' } },
     console: { warn: (...args) => logs.push(args), error: (...args) => logs.push(args) },
-    require: () => ({ createClient: () => client }),
+    require: (name) => name.endsWith("authSecurity.ts") ? authSecurity : ({ createClient: () => client }),
   };
   vm.runInNewContext(compiled, context);
   return {
@@ -84,4 +87,18 @@ test('malformed requests and missing configuration fail safely', async () => {
   assert.equal((await h.fetch(loginRequest(null))).status, 400);
   assert.equal((await h.fetch(loginRequest({ username: 'abc', password: '' }))).status, 401);
   assert.equal((await handler({ missingEnv: true }).fetch(loginRequest())).status, 503);
+});
+
+
+test('the shared rate limiter rejects requests before profile lookup and authentication, with Retry-After',async()=>{
+ const h=handler({rateAllowed:false}); const response=await h.fetch(loginRequest());
+ assert.equal(response.status,429); assert.equal(response.headers.get('Retry-After'),'120');
+ assert.equal(h.authCalls(),0); assert.equal(h.lookupUsername(),undefined);
+ const unavailable=handler({rateFails:true}); assert.equal((await unavailable.fetch(loginRequest())).status,503); assert.equal(unavailable.authCalls(),0);
+});
+test('expired temporary credentials cannot obtain a session through username login',async()=>{
+ for (const expiry of [null,'invalid','2020-01-01']) {
+  const h=handler({profile:{id:'account',email:'test@example.test',active:true,must_change_password:true,temporary_password_expires_at:expiry}});
+  assert.equal((await h.fetch(loginRequest())).status,401); assert.equal(h.authCalls(),0);
+ }
 });

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
-const compiled = await build({ entryPoints: [new URL('../src/competencyMatrix.tsx', import.meta.url).pathname], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime', 'exceljs'], plugins: [{ name: 'fake-database', setup(builder) {
+const compiled = await build({ entryPoints: [new URL('../src/competencyMatrix.tsx', import.meta.url).pathname], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react-dom', 'react/jsx-runtime', 'exceljs'], plugins: [{ name: 'fake-database', setup(builder) {
   builder.onResolve({ filter: /^\.\/supabase$/ }, () => ({ path: 'supabase', namespace: 'test' }));
   builder.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const supabase = globalThis.__database;', loader: 'js' }));
 } }] });

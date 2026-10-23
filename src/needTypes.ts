@@ -38,6 +38,7 @@ export type Profile = {
   email: string;
   username: string;
   must_change_password: boolean;
+  temporary_password_expires_at: string | null;
   full_name: string | null;
   role: Role;
   active: boolean;

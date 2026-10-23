@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { supabase } from "./supabase";
 import { Input, Select } from "./FormFields";
@@ -10,12 +10,12 @@ import { competencyGroup } from "./competencyAssignment";
 type Props = {
   catalogs: Catalog[]; competencyMatrix: CompetencyMatrixRow[]; orgUnits: OrgUnit[];
   profile: Profile | null; onDone: () => void | Promise<void>; userId: string;
-  periodId?: string; period?: PlanningPeriod; initialNeed?: Need; onCancel?: () => void;
+  periodId?: string; period?: PlanningPeriod; initialNeed?: Need; onCancel?: () => void; onDirtyChange?: (dirty: boolean) => void; onSavingChange?: (saving: boolean) => void;
 };
 const norm = (value: string) => value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 const unique = (values: string[]) => [...new Set(values)].filter(Boolean);
 
-export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone, userId, periodId, period, initialNeed, onCancel }: Props) {
+export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone, userId, periodId, period, initialNeed, onCancel, onDirtyChange, onSavingChange }: Props) {
   const selectedPeriodId = initialNeed?.period_id ?? periodId ?? period?.id;
   const initialForm = {
     type: initialNeed?.type ?? "Interna", factor: initialNeed?.factor ?? "", competency: initialNeed?.competency ?? "",
@@ -31,6 +31,10 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     modality: initialNeed?.modality ?? "", provider: initialNeed?.provider ?? "", observations: initialNeed?.observations ?? "",
   };
   const [f, setF] = useState(initialForm), [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const [baseline] = useState(initialForm);
+  const dirty = JSON.stringify(f) !== JSON.stringify(baseline);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange?.(saving); }, [saving, onSavingChange]);
   const [planningOpen, setPlanningOpen] = useState(false);
   const set = (key: keyof typeof f, value: string | number) => setF(current => ({ ...current, [key]: value }));
   const opts = (kind: string) => catalogs.filter(c => c.kind === kind && c.active).map(c => c.name);
@@ -47,7 +51,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     event.preventDefault();
     if (saving) return;
     setError("");
-    if (![f.factor, f.competency, f.gap, f.objective, f.position, f.indicator, f.goal, f.evidence].every(value => value.trim()) || (justificationRequired && !f.priority_reason.trim())) {
+    if (![f.factor, f.competency, f.gap, f.objective, f.position, f.evidence].every(value => value.trim()) || (justificationRequired && !f.priority_reason.trim())) {
       setError("Complete los campos esenciales con información concreta; no se admiten espacios vacíos."); return;
     }
     if (!Number.isInteger(f.participants) || f.participants < 1) { setError("Ingrese un número entero de participantes mayor que cero."); return; }
@@ -101,18 +105,10 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       <section className="need-block"><h3><span>04</span> Objetivo de aprendizaje</h3><div className="fields"><label className="full">¿Qué deberán saber hacer después?
         <textarea value={f.objective} onChange={e => set("objective", e.target.value)} rows={2} required placeholder="Ej.: preparar expedientes completos conforme al procedimiento." />
       </label></div></section>
-      <div className="need-outcome-pair">
-        <section className="need-block"><h3><span>05</span> Indicador</h3><div className="fields"><label className="full">Indicador
-          <input value={f.indicator} onChange={e => set("indicator", e.target.value)} required placeholder="Ej.: porcentaje de expedientes devueltos." /><small>La medida que permitirá evaluar la mejora.</small>
-        </label></div></section>
-        <section className="need-block"><h3><span>06</span> Meta esperada</h3><div className="fields"><label className="full">Meta esperada
-          <input value={f.goal} onChange={e => set("goal", e.target.value)} required placeholder="Ej.: reducir del 12 % al 5 % en tres meses." /><small>Incluya el resultado que busca alcanzar y su plazo.</small>
-        </label></div></section>
-      </div>
-      <section className="need-block"><h3><span>07</span> Medio de verificación</h3><div className="fields"><label className="full">Medio de verificación
+      <section className="need-block"><h3><span>05</span> Medio de verificación</h3><div className="fields"><label className="full">Medio de verificación
         <input value={f.evidence} onChange={e => set("evidence", e.target.value)} required placeholder="Ej.: reporte mensual de revisión de expedientes." /><small>Identifique el registro o evidencia que comprobará la meta.</small>
       </label></div></section>
-      <section className="need-block"><h3><span>08</span> Prioridad justificada</h3><div className="fields">
+      <section className="need-block"><h3><span>06</span> Prioridad justificada</h3><div className="fields">
         <Select label="Prioridad" value={f.priority} values={["Baja", "Media", "Alta", "Crítica"]} onChange={value => set("priority", value)} required />
         <label>Justificación de prioridad<textarea value={f.priority_reason} onChange={e => set("priority_reason", e.target.value)} rows={2} required={justificationRequired}
           placeholder="¿Qué consecuencia tendría no atender esta necesidad?" />{initialNeed && !initialNeed.priority_reason && <small>Registro anterior: puede completar esta justificación al actualizarlo.</small>}</label>
@@ -120,7 +116,9 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     </div>
     <details className="need-planning" open={planningOpen} onToggle={event => setPlanningOpen(event.currentTarget.open)}>
       <summary><span><b>Planificación propuesta</b><small>Opcional en el levantamiento · para completar o validar con Talento Humano</small></span><span className="need-disclosure" aria-hidden="true">⌄</span></summary>
-      <div className="need-planning-body"><p>Puede registrar la necesidad sin fechas, horas o costo. Los datos pendientes se mostrarán como «Por planificar» o «Por estimar».</p><div className="fields">
+      <div className="need-planning-body"><p>Puede registrar la necesidad sin indicador, meta esperada, fechas, horas o costo. Los datos pendientes se mostrarán como «Por planificar» o «Por estimar».</p><div className="fields">
+        <label>Indicador<input value={f.indicator} onChange={event => set("indicator", event.target.value)} placeholder="Ej.: porcentaje de expedientes devueltos." /><small>Opcional en el levantamiento. La medida que permitirá evaluar la mejora.</small></label>
+        <label>Meta esperada<input value={f.goal} onChange={event => set("goal", event.target.value)} placeholder="Ej.: reducir del 12 % al 5 % en tres meses." /><small>Opcional en el levantamiento. Incluya el resultado esperado y su plazo.</small></label>
         <Select label="Tipo de capacitación" value={f.type} values={["Interna", "Externa"]} onChange={value => set("type", value)} />
         <Select label="Modalidad" value={f.modality} values={opts("modality")} onChange={value => set("modality", value)} />
         <Input label="Horas por participante" type="number" min="0.01" step="0.01" value={f.hours} onChange={value => set("hours", value)} placeholder="Por estimar" />

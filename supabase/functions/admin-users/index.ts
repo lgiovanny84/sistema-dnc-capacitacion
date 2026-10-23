@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+import { temporaryPasswordExpiry, temporaryPasswordExpired, isVerifiedRecovery } from "../_shared/authSecurity.ts";
+
 const appOrigin = "https://sistema-dnc-capacitacion.vercel.app";
 const cors = {
   "Access-Control-Allow-Origin": appOrigin,
@@ -31,7 +33,7 @@ export default {
         auth: { persistSession: false },
       });
       const { data: profile, error: profileError } = await caller.from("profiles")
-        .select("role,active,deleted_at")
+        .select("role,active,deleted_at,must_change_password,temporary_password_expires_at")
         .eq("id", user.id)
         .single();
       if (profileError) {
@@ -50,6 +52,8 @@ export default {
         return json({ error: "Solicitud no válida." }, 400);
       }
       if (body.action === "complete-first-login") {
+        if (temporaryPasswordExpired(profile) && !isVerifiedRecovery(authorization, user.id))
+          return json({ error: "La clave temporal venció. Solicite una nueva al administrador o utilice la recuperación por correo." }, 403);
         const password = String(body.password ?? "");
         if (password.length < 12 || password.length > 128)
           return json({ error: "La contraseña debe tener entre 12 y 128 caracteres." }, 400);
@@ -59,6 +63,8 @@ export default {
         if (updateError) return json({ error: "Se cambió la contraseña, pero no se pudo completar el primer acceso. Intente de nuevo." }, 500);
         return json({ ok: true }, 200);
       }
+      if (profile.must_change_password)
+        return json({ error: "Cambie su contraseña temporal antes de continuar." }, 403);
       if (profile.role !== "admin")
         return json({ error: "Acceso exclusivo para administradores." }, 403);
 
@@ -80,9 +86,10 @@ export default {
             identity?.user?.email?.toLowerCase() !== target.email.toLowerCase())
           return json({ error: "El perfil no coincide con la cuenta de ingreso. Revise el usuario." }, 409);
 
+        const expiresAt = temporaryPasswordExpiry();
         // Fail closed: never issue a new password before requiring its replacement.
         const { data: marked, error: markError } = await caller.from("profiles")
-          .update({ must_change_password: true, profile_updated_at: new Date().toISOString() })
+          .update({ must_change_password: true, temporary_password_expires_at: expiresAt, profile_updated_at: new Date().toISOString() })
           .eq("id", targetId).is("deleted_at", null).select("id").maybeSingle();
         if (markError || !marked)
           return json({ error: "No se pudo configurar el cambio obligatorio de contraseña." }, 500);
@@ -92,7 +99,7 @@ export default {
           return json({ error: "No se pudo confirmar la nueva clave temporal. Genere otra antes de compartirla." }, 500);
         if (!await verifyTemporaryPassword(url, anon, target.email, temporaryPassword, target.id))
           return json({ error: "Se reemplazó la contraseña, pero no se pudo validar la clave temporal. Genere una nueva clave antes de compartirla." }, 500);
-        return json({ ok: true, email: target.email, username: target.username, temporaryPassword, loginUrl: appOrigin, active: target.active }, 200);
+        return json({ ok: true, email: target.email, username: target.username, temporaryPassword, temporaryPasswordExpiresAt: expiresAt, loginUrl: appOrigin, active: target.active }, 200);
       }
       if (body.action !== undefined && body.action !== "create")
         return json({ error: "Acción no válida." }, 400);
@@ -109,6 +116,7 @@ export default {
       if (username && !/^[a-z0-9._-]{3,32}$/.test(username))
         return json({ error: "El usuario debe tener entre 3 y 32 caracteres válidos." }, 400);
       const temporaryPassword = temporaryPasswordForUser();
+      const expiresAt = temporaryPasswordExpiry();
       const { data, error } = await admin.auth.admin.createUser({
         email,
         password: temporaryPassword,
@@ -118,7 +126,7 @@ export default {
       if (error) return json({ error: error.message }, 400);
       if (!data.user) return json({ error: "No se pudo crear el usuario." }, 500);
       const { data: createdProfile, error: updateError } = await caller.from("profiles")
-        .update({ full_name: fullName, role, active: true, must_change_password: true,
+        .update({ full_name: fullName, role, active: true, must_change_password: true, temporary_password_expires_at: expiresAt,
           ...(username ? { username } : {}) })
         .eq("id", data.user.id).select("username").single();
       if (updateError || !createdProfile) {
@@ -130,7 +138,7 @@ export default {
         await admin.auth.admin.deleteUser(data.user.id);
         return json({ error: "No se pudo validar la clave temporal. Intente crear el usuario nuevamente." }, 500);
       }
-      return json({ ok: true, username: createdProfile.username, temporaryPassword, loginUrl: appOrigin }, 200);
+      return json({ ok: true, username: createdProfile.username, temporaryPassword, temporaryPasswordExpiresAt: expiresAt, loginUrl: appOrigin }, 200);
     } catch {
       return json({ error: "No fue posible procesar la solicitud." }, 500);
     }

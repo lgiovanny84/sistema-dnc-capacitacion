@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import vm from 'node:vm';
+import {readFileSync} from 'node:fs';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
-const compiled = await build({ entryPoints: [new URL('../src/App.tsx', import.meta.url).pathname], bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime', 'exceljs'], plugins: [{ name: 'fake-database', setup(builder) {
+const compiled = await build({ stdin: {contents: readFileSync(new URL('../src/App.tsx', import.meta.url),'utf8')+'\nexport {List};',resolveDir:new URL('../src',import.meta.url).pathname,loader:'tsx'}, bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react-dom', 'react/jsx-runtime', 'exceljs'], plugins: [{ name: 'fake-database', setup(builder) {
   builder.onResolve({ filter: /^\.\/supabase$/ }, () => ({ path: 'supabase', namespace: 'test' }));
   builder.onLoad({ filter: /.*/, namespace: 'test' }, () => ({ contents: 'export const configured = true; export const supabase = globalThis.__database;', loader: 'js' }));
 } }] });
@@ -57,4 +58,17 @@ test('failed refresh retains data and administrator permissions instead of closi
 });
 test('ordinary users do not receive the administration menu or management component', async () => {
   const app = appHarness('user'); await app.flush(); assert.equal(app.adminButton(), undefined); assert.equal(app.find('Admin'), undefined);
+});
+
+
+test('editing opens a guarded modal while the existing list remains mounted, and users retain read-only access',()=>{
+ const state=[];let index=0,confirmations=0;const context={module:{exports:{}},exports:{},__database:{},window:{confirm(){confirmations++;return false}},require(name){return name==='react'?{useState(initial){const i=index++;if(!(i in state))state[i]=initial;return[state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value}]}}:require(name)}};
+ vm.runInNewContext(compiled.outputFiles[0].text,context);
+ const props={needs:[{id:'need',competency:'Liderazgo',status:'Aprobada'}],role:'admin',reload:async()=>{},catalogs:[],competencyMatrix:[],orgUnits:[],profile:{role:'admin'},userId:'admin'};
+ function render(){index=0;return context.module.exports.List(props)}
+ let tree=render();let table=nodes(tree).find(node=>node.type?.name==='MiniTable');table.props.onEdit(props.needs[0]);tree=render();
+ assert.ok(nodes(tree).find(node=>node.type?.name==='MiniTable'),'list stays mounted behind editor');
+ let modal=nodes(tree).find(node=>node.type?.name==='Modal');assert.ok(modal);
+ const form=nodes(tree).find(node=>node.type?.name==='NeedForm');form.props.onDirtyChange(true);tree=render();modal=nodes(tree).find(node=>node.type?.name==='Modal');modal.props.onClose();assert.equal(confirmations,1);assert.ok(nodes(render()).find(node=>node.type?.name==='Modal'));
+ props.role='user';tree=render();assert.equal(nodes(tree).find(node=>node.type?.name==='MiniTable').props.onEdit,undefined);assert.equal(nodes(tree).find(node=>node.type?.name==='Modal'),undefined);
 });
