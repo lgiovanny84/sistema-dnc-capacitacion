@@ -49,7 +49,7 @@ test('administrator sees counts, explicit missing fields and a direct completion
 test('administrator can filter pending activities and open planning directly; saved changes update the pending count',async()=>{
  const compiled=result.outputFiles.find(file=>file.path.endsWith('AdminOverview.js')).text;
  const states=[];let index=0,reloads=0;
- const context={module:{exports:{}},exports:{},window:{confirm:()=>true},require(name){if(name==='react')return{useState(initial){const i=index++;if(!(i in states))states[i]=initial;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next}]}};return require(name)}};
+ const context={module:{exports:{}},exports:{},window:{confirm:()=>true},require(name){if(name==='react')return{...require('react'),useState(initial){const i=index++;if(!(i in states))states[i]=initial;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next}]}};return require(name)}};
  vm.runInNewContext(compiled,context);
  const props={needs:[{...complete,id:'plan',goal:''},{...complete,id:'essential',gap:''}],groups:[],catalogs:[],competencyMatrix:[],orgUnits:[],profile:{role:'admin'},userId:'admin',period:{name:'2027'},reload:async()=>{reloads++}};
  const walk=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];

@@ -1,3 +1,5 @@
+import { NeedBudgetInfo } from "./BudgetModule";
+import { CompactSection } from "./CompactSection";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { supabase } from "./supabase";
@@ -87,6 +89,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     <div className="need-intro"><span className="eyebrow">DETECCIÓN DE NECESIDADES DE CAPACITACIÓN (DNC)</span>
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>
       <p>Describa el problema, a quién afecta y el resultado que espera lograr.</p></div>
+    {initialNeed && <NeedBudgetInfo needId={initialNeed.id}/>}
     <dl className="need-context">
       <div><dt>Período</dt><dd>{period?.name ?? "Sin período"}</dd></div>
       <div><dt>Departamento</dt><dd>{f.department || "Sin asignar"}</dd></div>
@@ -102,31 +105,31 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
         <Select label="Grupo ocupacional (sin relación activa en la matriz)" value={f.occupational_group} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area) && norm(o.department_name) === norm(f.department)).map(o => o.group_name), f.occupational_group])} onChange={value => set("occupational_group", value)} />}
     </div></details>}
     <div className="need-essential">
-      <section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Elija una competencia de su departamento o proponga un tema que no aparezca en la lista.</p><div className="fields">
+      <CompactSection title="Factor y competencia"><section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Elija una competencia de su departamento o proponga un tema que no aparezca en la lista.</p><div className="fields">
         <Select label="Factor" value={f.factor} values={factors.length ? factors : opts("factor")} onChange={value => { resetTopic(); setF(current => ({ ...current, factor: value, competency: "" })); }} required />
         <div className="topic-entry">
           <div className="topic-mode" role="group" aria-label="Forma de registrar la competencia"><button type="button" aria-pressed={!topicEntry.manual} onClick={() => chooseTopicMode(false)}>Seleccionar de la lista</button><button type="button" aria-pressed={topicEntry.manual} onClick={() => chooseTopicMode(true)}>Mi tema no aparece</button></div>
           {topicEntry.manual ? <label>Tema o competencia propuesta<input value={f.competency} onChange={event => changeTopic(event.target.value)} required placeholder="Ej.: análisis de datos para la gestión de cartera" /><small>Se guardará en esta necesidad para revisión del administrador. La incorporación a la matriz se realiza desde Administración.</small></label> : <><Select label="Competencia a desarrollar" value={f.competency} values={availableCompetencies} onChange={changeTopic} required />{!availableCompetencies.length && <p className="topic-hint">Seleccione un factor. Si su tema no está disponible, use «Mi tema no aparece».</p>}</>}
         </div>
-      </div></section>
-      <section className="need-block"><h3><span>02</span> Brecha identificada</h3><div className="fields"><label className="full">Brecha identificada / Necesidad identificada
+      </div></section></CompactSection>
+      <CompactSection title="Brecha identificada"><section className="need-block"><h3><span>02</span> Brecha identificada</h3><div className="fields"><label className="full">Brecha identificada / Necesidad identificada
         <textarea value={f.gap} onChange={e => set("gap", e.target.value)} rows={3} required placeholder="¿Qué ocurre actualmente, qué evidencia tiene y cómo afecta al trabajo?" />
-        <small>Describa una situación concreta. Talento Humano revisará si la capacitación puede resolverla.</small></label></div></section>
-      <section className="need-block"><h3><span>03</span> Beneficiarios</h3><div className="fields">
+        <small>Describa una situación concreta. Talento Humano revisará si la capacitación puede resolverla.</small></label></div></section></CompactSection>
+      <CompactSection title="Beneficiarios"><section className="need-block"><h3><span>03</span> Beneficiarios</h3><div className="fields">
         <Input label="Cargo beneficiario" value={f.position} list={opts("position")} onChange={value => set("position", value)} required />
         <Input label="N.º de participantes" type="number" min="1" step="1" value={f.participants} onChange={value => set("participants", Number(value))} required />
-      </div></section>
-      <section className="need-block"><h3><span>04</span> Objetivo de aprendizaje</h3><div className="fields"><label className="full">¿Qué deberán saber hacer después?
+      </div></section></CompactSection>
+      <CompactSection title="Objetivo de aprendizaje"><section className="need-block"><h3><span>04</span> Objetivo de aprendizaje</h3><div className="fields"><label className="full">¿Qué deberán saber hacer después?
         <textarea value={f.objective} onChange={e => set("objective", e.target.value)} rows={2} required placeholder="Ej.: preparar expedientes completos conforme al procedimiento." />
-      </label></div></section>
-      <section className="need-block"><h3><span>05</span> Medio de verificación</h3><div className="fields"><label className="full">Medio de verificación
+      </label></div></section></CompactSection>
+      <CompactSection title="Medio de verificación"><section className="need-block"><h3><span>05</span> Medio de verificación</h3><div className="fields"><label className="full">Medio de verificación
         <input value={f.evidence} onChange={e => set("evidence", e.target.value)} required placeholder="Ej.: reporte mensual de revisión de expedientes." /><small>Identifique el registro o evidencia que comprobará la meta.</small>
-      </label></div></section>
-      <section className="need-block"><h3><span>06</span> Prioridad justificada</h3><div className="fields">
+      </label></div></section></CompactSection>
+      <CompactSection title="Prioridad justificada"><section className="need-block"><h3><span>06</span> Prioridad justificada</h3><div className="fields">
         <Select label="Prioridad" value={f.priority} values={["Baja", "Media", "Alta", "Crítica"]} onChange={value => set("priority", value)} required />
         <label>Justificación de prioridad<textarea value={f.priority_reason} onChange={e => set("priority_reason", e.target.value)} rows={2} required={justificationRequired}
           placeholder="¿Qué consecuencia tendría no atender esta necesidad?" />{initialNeed && !initialNeed.priority_reason && <small>Registro anterior: puede completar esta justificación al actualizarlo.</small>}</label>
-      </div></section>
+      </div></section></CompactSection>
     </div>
     <details className="need-planning" open={planningOpen} onToggle={event => setPlanningOpen(event.currentTarget.open)}>
       <summary><span><b>Planificación propuesta</b><small>Opcional en el levantamiento · para completar o validar con Talento Humano</small></span><span className="need-disclosure" aria-hidden="true">⌄</span></summary>

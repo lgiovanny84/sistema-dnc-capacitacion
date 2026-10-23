@@ -248,3 +248,29 @@ button.secondary:hover:not(:disabled), .secondary:hover:not(:disabled) { backgro
   .group-budget-help, .topic-mode { display: none; }
   .table th { position: static; }
 }
+
+/* Configurable, initially collapsed sections. Keep controls and drafts mounted. */
+.compact-controls{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 16px;flex-wrap:wrap}
+.compact-controls>span{margin-right:auto;color:var(--ink-600,#55667a);font-size:13px}
+.compact-section{min-width:0;margin:0 0 12px;border:1px solid #dce3ec;border-radius:10px;background:#fff;overflow:clip}
+.compact-heading{width:100%;display:flex;justify-content:space-between;align-items:center;gap:16px;background:#fff;color:#152b43;text-align:left;border:0;border-radius:0;padding:16px 20px;min-height:56px}
+.compact-heading:hover{background:#f4f7fb}
+.compact-heading>span:first-child{display:grid;gap:4px;min-width:0}
+.compact-heading b{font-size:15px;line-height:1.4}
+.compact-heading small{font-size:12px;color:#55667a;white-space:normal}
+.compact-heading>span:last-child{flex-shrink:0;font-size:12px;color:#1f557f}
+.compact-heading[aria-expanded=true]{border-bottom:1px solid #dce3ec}
+.compact-section>div>.panel,.compact-section>div>.cards,.compact-section>div>.need-block{margin:0;border:0;box-shadow:none;border-radius:0}
+.compact-section [hidden]{display:none!important}
+.need-essential>.compact-section{grid-column:1/-1}
+.budget-fieldset{border:0;padding:0;margin:16px 0;min-width:0}
+.budget-module .fields{align-items:end}
+.budget-module .table{margin:16px 0;max-width:100%;overflow:auto}
+.budget-module td input{min-width:110px;max-width:160px}
+.budget-module td select{min-width:150px;max-width:400px}
+.budget-module td small{display:block;color:#55667a;margin-top:4px}
+.budget-module details{margin-top:16px;border-top:1px solid #dce3ec;padding-top:12px}
+.budget-module summary{cursor:pointer;font-weight:600;padding:8px 0;color:#1f557f}
+.budget-module .matrix-savebar{position:sticky;top:0;z-index:5;background:#fff;padding:12px 16px}
+@media(max-width:600px){.compact-heading{padding:14px 12px;gap:8px}.compact-heading b{font-size:14px}.budget-module .panelhead{align-items:stretch}.budget-module .matrix-savebar{position:static}.budget-module td select{max-width:240px}}
+.compact-workspace{display:flex;flex-direction:column;min-width:0}

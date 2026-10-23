@@ -29,7 +29,7 @@ function appHarness(role = 'admin') {
     auth: { getSession: async () => ({ data: { session } }), onAuthStateChange(callback) { listener = callback; return { data: { subscription: { unsubscribe() {} } } }; } },
     from(table) { calls++; const query = { select() { return this; }, order() { return this; }, eq() { return this; }, single() { return this; }, range() { return this; }, then(resolve) { resolve(fail ? { data: null, error: { message: 'Conexión interrumpida' } } : { data: tables[table] ?? [], error: null }); } }; return query; },
   };
-  const context = { module: { exports: {} }, exports: {}, __database: database, localStorage: { getItem: () => null, setItem() {} }, window: { addEventListener() {}, removeEventListener() {}, confirm: () => true }, require(name) { return name === 'react' ? react : require(name); }, console };
+  const context = { module: { exports: {} }, exports: {}, __database: database, localStorage: { getItem: () => null, setItem() {} }, window: { addEventListener() {}, removeEventListener() {}, confirm: () => true }, require(name) { return name === 'react' ? { ...require('react'), ...react } : require(name); }, console };
   vm.runInNewContext(compiled.outputFiles[0].text, context);
   function render() { index = 0; changed = false; tree = context.module.exports.default(); return tree; }
   async function flush() { for (let i = 0; i < 25; i++) { for (const effect of effects.splice(0)) effect(); await Promise.resolve(); if (changed) render(); } return tree; }
@@ -63,7 +63,7 @@ test('ordinary users do not receive the administration menu or management compon
 
 
 test('editing opens a guarded modal while the existing list remains mounted, and users retain read-only access',()=>{
- const state=[];let index=0,confirmations=0;const context={module:{exports:{}},exports:{},__database:{},window:{confirm(){confirmations++;return false}},require(name){return name==='react'?{useState(initial){const i=index++;if(!(i in state))state[i]=initial;return[state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value}]}}:require(name)}};
+ const state=[];let index=0,confirmations=0;const context={module:{exports:{}},exports:{},__database:{},window:{confirm(){confirmations++;return false}},require(name){return name==='react'?{...require('react'),useState(initial){const i=index++;if(!(i in state))state[i]=initial;return[state[i],value=>{state[i]=typeof value==='function'?value(state[i]):value}]}}:require(name)}};
  vm.runInNewContext(compiled.outputFiles[0].text,context);
  const props={needs:[{id:'need',competency:'Liderazgo',status:'Aprobada'}],role:'admin',reload:async()=>{},catalogs:[],competencyMatrix:[],orgUnits:[],profile:{role:'admin'},userId:'admin'};
  function render(){index=0;return context.module.exports.List(props)}

@@ -15,7 +15,7 @@ test('editing keeps the original period and saves optional planning without an e
   let operation, payload, completed = false;
   const errors = [];
   const query = { eq(key, value) { assert.equal(key, 'id'); assert.equal(value, fields.id); return this; }, select() { return this; }, async maybeSingle() { return { data: { id: fields.id }, error: null }; } };
-  const context = { module: { exports: {} }, exports: {}, __database: { from(table) { assert.equal(table, 'training_needs'); return { update(values) { operation = 'update'; payload = values; return query; } }; } }, require(name) { return name === 'react' ? { useEffect() {}, useState(value) { return [value, next => { if (typeof next === 'string' && next) errors.push(next); }]; } } : require(name); } };
+  const context = { module: { exports: {} }, exports: {}, __database: { from(table) { assert.equal(table, 'training_needs'); return { update(values) { operation = 'update'; payload = values; return query; } }; } }, require(name) { return name === 'react' ? { ...require('react'), useEffect() {}, useState(value) { return [value, next => { if (typeof next === 'string' && next) errors.push(next); }]; } } : require(name); } };
   vm.runInNewContext(compiled.outputFiles[0].text, context);
   const form = context.module.exports.NeedForm({ catalogs: [], competencyMatrix: [], orgUnits: [], profile: { role: 'user' }, userId: 'owner', initialNeed: fields, onDone() { completed = true; } });
   await form.props.onSubmit({ preventDefault() {} });
@@ -35,7 +35,7 @@ for (const role of ['admin', 'user']) test(`${role}: group assignment respects t
   const profile = { role, occupational_group: 'Profesional', area: fields.area, department: fields.department };
   const relation = { area: fields.area, department: fields.department, factor: fields.factor, competency: fields.competency, group_name: 'JEFATURAS', active: true };
   const query = { eq() { return this; }, select() { return this; }, async maybeSingle() { return { data: { id: fields.id }, error: null }; } };
-  const context = { module: { exports: {} }, exports: {}, __database: { from() { return { update(values) { payload = values; return query; } }; } }, require(name) { return name === 'react' ? { useEffect() {}, useState(value) { return [value, () => {}]; } } : require(name); } };
+  const context = { module: { exports: {} }, exports: {}, __database: { from() { return { update(values) { payload = values; return query; } }; } }, require(name) { return name === 'react' ? { ...require('react'), useEffect() {}, useState(value) { return [value, () => {}]; } } : require(name); } };
   vm.runInNewContext(compiled.outputFiles[0].text, context);
   const form = context.module.exports.NeedForm({ catalogs: [], competencyMatrix: [relation], orgUnits: [], profile, userId: 'owner', initialNeed: fields, onDone() {} });
   await form.props.onSubmit({ preventDefault() {} });
@@ -47,7 +47,7 @@ for (const role of ['admin', 'user']) test(`${role}: group assignment respects t
 test('indicator and expected goal are optional and appear only inside proposed planning',async()=>{
  let payload;
  const q={eq(){return this},select(){return this},async maybeSingle(){return{data:{id:fields.id},error:null}}};
- const context={module:{exports:{}},exports:{},__database:{from(){return{update(value){payload=value;return q}}}},require(name){return name==='react'?{useEffect(){},useState(value){return[value,()=>{}]}}:require(name)}};
+ const context={module:{exports:{}},exports:{},__database:{from(){return{update(value){payload=value;return q}}}},require(name){return name==='react'?{...require('react'),useEffect(){},useState(value){return[value,()=>{}]}}:require(name)}};
  vm.runInNewContext(compiled.outputFiles[0].text,context);
  const form=context.module.exports.NeedForm({catalogs:[],competencyMatrix:[],orgUnits:[],profile:{role:'user'},userId:'owner',initialNeed:{...fields,indicator:'',goal:''},onDone(){}});
  await form.props.onSubmit({preventDefault(){}}); assert.equal(payload.indicator,''); assert.equal(payload.goal,'');
@@ -65,7 +65,7 @@ function interactiveForm(initialNeed) {
   const react={useEffect(){},useState(initial){const i=index++;if(!(i in states))states[i]=initial;return[states[i],next=>{states[i]=typeof next==='function'?next(states[i]):next}]}};
   const query={eq(){return this},select(){return this},async single(){return{data:{id:'new'},error:null}},async maybeSingle(){return{data:{id:'existing'},error:null}}};
   const database={from(table){return{insert(value){writes.push({table,operation:'insert',value});return query},update(value){writes.push({table,operation:'update',value});return query}}}};
-  const context={module:{exports:{}},exports:{},__database:database,require(name){return name==='react'?react:require(name)}};
+  const context={module:{exports:{}},exports:{},__database:database,require(name){return name==='react'?{...require('react'),...react}:require(name)}};
   vm.runInNewContext(compiled.outputFiles[0].text,context);
   const props={catalogs:[],competencyMatrix:[{area:fields.area,department:fields.department,factor:fields.factor,competency:'Liderazgo',group_name:'JEFATURAS',active:true},{area:fields.area,department:fields.department,factor:'Técnicas',competency:'Excel',group_name:'Profesional',active:true}],orgUnits:[],profile:{role:'user',area:fields.area,department:fields.department,occupational_group:'Profesional',position:'Analista'},userId:'owner',period:{id:'2027',name:'2027',start_date:'2027-01-01',end_date:'2027-12-31'},initialNeed,onDone(){completed++}};
   const walk=node=>!node||typeof node!=='object'?[]:[node,...[node.props?.children].flat(Infinity).flatMap(walk)];
