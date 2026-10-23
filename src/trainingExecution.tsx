@@ -259,7 +259,7 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return <div className="card"><small>{label}</small><strong>{value}</strong></div>;
+  return <div className="card"><small>{label}</small><strong className={!/\d/.test(value) ? "metric-text" : undefined}>{value}</strong></div>;
 }
 
 export function TrainingExecutionModule({
