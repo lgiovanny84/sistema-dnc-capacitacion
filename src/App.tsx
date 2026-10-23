@@ -13,6 +13,9 @@ import { CollapsibleTable } from "./CollapsibleTable";
 import { Input, Select } from "./FormFields";
 import { NeedForm } from "./NeedForm";
 import { Modal } from "./Modal";
+import { AdminOverview } from "./AdminOverview";
+import { fetchAllReportRows } from "./reportData";
+import { buildNeedsWorkbook, downloadInstitutionalWorkbook, institutionalLogo, reportFilename } from "./institutionalExcel";
 import type { Role, Need, PlanningPeriod, Catalog, Profile, OrgUnit } from "./needTypes";
 import { competencyGroup, needWithCompetencyGroup } from "./competencyAssignment";
 import { needReportColumns, needReportValue, validatePlanning, planningValues } from "./needPlanning";
@@ -153,10 +156,7 @@ export default function App() {
         { data: periodData, error: periodError },
         { data: matrixData, error: matrixError },
       ] = await Promise.all([
-        supabase!
-          .from("training_needs")
-          .select("*")
-          .order("created_at", { ascending: false }),
+        fetchAllReportRows<Need>("training_needs", [{ field: "created_at", ascending: false }]),
         supabase!.from("catalogs").select("*").order("name"),
         supabase!
           .from("profiles")
@@ -203,7 +203,7 @@ export default function App() {
       if (p?.role === "admin") {
         const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
           await Promise.all([
-            supabase!.from("training_records").select("*").order("start_date", { ascending: false }),
+            fetchAllReportRows<TrainingRecord>("training_records", [{ field: "start_date", ascending: false }]),
             supabase!.from("department_budgets").select("*").order("year", { ascending: false }).order("department_name"),
             supabase!.from("training_import_batches").select("*").order("uploaded_at", { ascending: false }),
           ]);
@@ -373,6 +373,7 @@ export default function App() {
             trainingRecords={periodRecords}
             budgetAllocations={periodBudgets}
             periodName={activePeriod?.name ?? "Sin período"}
+            adminOverview={role === "admin" ? <AdminOverview needs={periodNeeds} groups={[...orgUnits.map(unit => unit.group_name), ...competencyMatrix.filter(row => row.active).map(row => row.group_name)]} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={session.user.id} period={activePeriod} reload={load} /> : null}
           />
         ) : tab === "new" ? (
           activePeriod ? <NeedForm key={activePeriod.id}
@@ -403,6 +404,7 @@ export default function App() {
         ) : tab === "reports" ? (
           <Reports
             needs={visible}
+            period={activePeriod}
             filters={filters}
             setFilters={setFilters}
             options={options}
@@ -704,6 +706,7 @@ function PlanningNote({ needs }: { needs: Need[] }) {
   return costs || hours ? <p className="planning-note">Planificación pendiente: {costs} necesidades con costo por estimar y {hours} con horas por estimar. Los totales incluyen únicamente los valores registrados y pueden ser parciales.</p> : null;
 }
 function Dashboard({
+  adminOverview,
   needs,
   totalHours,
   budget,
@@ -712,6 +715,7 @@ function Dashboard({
   budgetAllocations,
   periodName,
 }: {
+  adminOverview?: React.ReactNode;
   needs: Need[];
   totalHours: number;
   budget: number;
@@ -738,6 +742,7 @@ function Dashboard({
         />
       </section>
       {role !== "admin" && <PlanningNote needs={needs} />}
+      {role === "admin" && adminOverview}
       {role === "admin" && (
         <BudgetSummary records={trainingRecords} budgets={budgetAllocations} plans={needs} periodName={periodName} />
       )}
@@ -1043,6 +1048,7 @@ function List({
   );
 }
 function Reports({
+  period,
   needs,
   filters,
   setFilters,
@@ -1051,6 +1057,7 @@ function Reports({
   budget,
   exportCSV,
 }: {
+  period?: PlanningPeriod;
   needs: Need[];
   filters: Record<string, string>;
   setFilters: (x: any) => void;
@@ -1059,6 +1066,18 @@ function Reports({
   budget: number;
   exportCSV: () => void;
 }) {
+  const [exporting, setExporting] = useState(false), [exportError, setExportError] = useState("");
+  async function exportExcel() {
+    if (exporting) return;
+    setExporting(true); setExportError("");
+    try {
+      const labels: Record<string, string> = { type: "Tipo", factor: "Factor", status: "Estado", area: "Área", department: "Departamento", occupational_group: "Grupo ocupacional" };
+      const applied = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `${labels[key] ?? key}: ${value}`).join(". ");
+      const book = await buildNeedsWorkbook(needs, period ?? { name: "Sin período" }, applied, await institutionalLogo());
+      await downloadInstitutionalWorkbook(book, reportFilename("reporte_necesidades", period?.name ?? "sin-periodo"));
+    } catch { setExportError("No se pudo exportar el reporte. Intente nuevamente."); }
+    finally { setExporting(false); }
+  }
   const set = (k: string, v: string) =>
     setFilters((x: any) => ({ ...x, [k]: v, ...(k === "area" ? { department: "", occupational_group: "" } : k === "department" ? { occupational_group: "" } : {}) }));
   return (
@@ -1143,11 +1162,11 @@ function Reports({
             <button className="secondary" onClick={() => window.print()}>
               Imprimir / PDF
             </button>{" "}
-            <button className="primary" onClick={exportCSV}>
-              Exportar CSV
-            </button>
+            <button className="primary" disabled={exporting} onClick={() => void exportExcel()}>{exporting ? "Generando Excel…" : "Exportar Excel institucional"}</button>{" "}
+            <button className="secondary" onClick={exportCSV}>Exportar CSV</button>
           </div>
         </div>
+        {exportError && <div className="error" role="alert">{exportError}</div>}
         <MiniTable needs={needs} />
       </div>
     </>

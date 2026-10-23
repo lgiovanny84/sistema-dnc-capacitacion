@@ -10,12 +10,12 @@ import { competencyGroup } from "./competencyAssignment";
 type Props = {
   catalogs: Catalog[]; competencyMatrix: CompetencyMatrixRow[]; orgUnits: OrgUnit[];
   profile: Profile | null; onDone: () => void | Promise<void>; userId: string;
-  periodId?: string; period?: PlanningPeriod; initialNeed?: Need; onCancel?: () => void; onDirtyChange?: (dirty: boolean) => void; onSavingChange?: (saving: boolean) => void;
+  periodId?: string; period?: PlanningPeriod; initialNeed?: Need; onCancel?: () => void; openPlanning?: boolean; onDirtyChange?: (dirty: boolean) => void; onSavingChange?: (saving: boolean) => void;
 };
 const norm = (value: string) => value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 const unique = (values: string[]) => [...new Set(values)].filter(Boolean);
 
-export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone, userId, periodId, period, initialNeed, onCancel, onDirtyChange, onSavingChange }: Props) {
+export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone, userId, periodId, period, initialNeed, onCancel, onDirtyChange, onSavingChange, openPlanning = false }: Props) {
   const selectedPeriodId = initialNeed?.period_id ?? periodId ?? period?.id;
   const initialForm = {
     type: initialNeed?.type ?? "Interna", factor: initialNeed?.factor ?? "", competency: initialNeed?.competency ?? "",
@@ -35,7 +35,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
   const dirty = JSON.stringify(f) !== JSON.stringify(baseline);
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => { onSavingChange?.(saving); }, [saving, onSavingChange]);
-  const [planningOpen, setPlanningOpen] = useState(false);
+  const [planningOpen, setPlanningOpen] = useState(openPlanning);
   const set = (key: keyof typeof f, value: string | number) => setF(current => ({ ...current, [key]: value }));
   const opts = (kind: string) => catalogs.filter(c => c.kind === kind && c.active).map(c => c.name);
   const departmentMatrix = competencyMatrix.filter(row => row.active && norm(row.area) === norm(f.area) && norm(row.department) === norm(f.department));

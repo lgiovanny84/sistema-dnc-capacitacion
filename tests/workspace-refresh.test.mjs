@@ -58,6 +58,7 @@ test('failed refresh retains data and administrator permissions instead of closi
 });
 test('ordinary users do not receive the administration menu or management component', async () => {
   const app = appHarness('user'); await app.flush(); assert.equal(app.adminButton(), undefined); assert.equal(app.find('Admin'), undefined);
+  assert.equal(app.find('Dashboard').props.adminOverview, null);
 });
 
 
@@ -71,4 +72,13 @@ test('editing opens a guarded modal while the existing list remains mounted, and
  let modal=nodes(tree).find(node=>node.type?.name==='Modal');assert.ok(modal);
  const form=nodes(tree).find(node=>node.type?.name==='NeedForm');form.props.onDirtyChange(true);tree=render();modal=nodes(tree).find(node=>node.type?.name==='Modal');modal.props.onClose();assert.equal(confirmations,1);assert.ok(nodes(render()).find(node=>node.type?.name==='Modal'));
  props.role='user';tree=render();assert.equal(nodes(tree).find(node=>node.type?.name==='MiniTable').props.onEdit,undefined);assert.equal(nodes(tree).find(node=>node.type?.name==='Modal'),undefined);
+});
+
+
+test('administrator overview uses the selected period and carries the same authorized need list',async()=>{
+ const app=appHarness();await app.flush();const dashboard=app.find('Dashboard');
+ assert.equal(dashboard.props.adminOverview.type.name,'AdminOverview');
+ assert.equal(dashboard.props.adminOverview.props.period.id,'2027');
+ assert.equal(dashboard.props.adminOverview.props.needs.length,1);
+ assert.equal(dashboard.props.adminOverview.props.needs[0].occupational_group,'JEFATURAS');
 });
