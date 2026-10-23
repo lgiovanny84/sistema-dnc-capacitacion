@@ -4,13 +4,14 @@ import { webcrypto } from 'node:crypto';
 import { test } from 'node:test';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { authSecurity } from './helpers/auth-security.mjs';
 
 const source = readFileSync(new URL('../supabase/functions/admin-users/index.ts', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const callerId = '11111111-1111-4111-8111-111111111111';
 const targetId = '22222222-2222-4222-8222-222222222222';
 
-function setup({ callerRole = 'admin', callerActive = true, targetActive = true, targetRole = 'user', deleted = false, identityMatches = true, markFails = false, passwordFails = false, verificationFails = false } = {}) {
+function setup({ callerRole = 'admin', callerActive = true, targetActive = true, targetRole = 'user', deleted = false, identityMatches = true, markFails = false, passwordFails = false, verificationFails = false, callerMustChange = false } = {}) {
   const events = [];
   const logs = [];
   let issuedPassword;
@@ -18,7 +19,7 @@ function setup({ callerRole = 'admin', callerActive = true, targetActive = true,
   const caller = {
     auth: { getUser: async () => ({ data: { user: { id: callerId } }, error: null }) },
     from: () => ({
-      select: () => ({ eq: () => ({ single: async () => ({ data: { role: callerRole, active: callerActive, deleted_at: null }, error: null }) }) }),
+      select: () => ({ eq: () => ({ single: async () => ({ data: { role: callerRole, active: callerActive, deleted_at: null, must_change_password: callerMustChange }, error: null }) }) }),
       update: (changes) => ({ eq: (_key, id) => ({ is: () => ({ select: () => ({ maybeSingle: async () => {
         events.push(['mark', id, changes.must_change_password]);
         return { data: markFails ? null : { id }, error: markFails ? { code: 'test' } : null };
@@ -49,7 +50,7 @@ function setup({ callerRole = 'admin', callerActive = true, targetActive = true,
     exports: {}, Request, Response, crypto: webcrypto, btoa,
     Deno: { env: { get: (key) => key } },
     console: { error: (...args) => logs.push(args) },
-    require: () => ({ createClient: (_url, key, options) => key === 'SUPABASE_SERVICE_ROLE_KEY' ? admin : options?.global ? caller : verifier }),
+    require: (name) => name.endsWith("authSecurity.ts") ? authSecurity : ({ createClient: (_url, key, options) => key === 'SUPABASE_SERVICE_ROLE_KEY' ? admin : options?.global ? caller : verifier }),
   };
   vm.runInNewContext(compiled, context);
   return { fetch: context.exports.default.fetch, events, logs };
@@ -65,6 +66,7 @@ test('administrator receives a unique verified credential after setting mandator
   assert.match(data.temporaryPassword, /^[a-zA-Z0-9_-]{24}$/);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(data.username, 'test-user');
+  assert.ok(Date.parse(data.temporaryPasswordExpiresAt)>Date.now()+23*3600000 && Date.parse(data.temporaryPasswordExpiresAt)<=Date.now()+24*3600000);
   assert.deepEqual(first.events, [['mark', targetId, true], ['password', targetId], ['verify'], ['sign-out']]);
   assert.ok(!JSON.stringify(first.logs).includes(data.temporaryPassword));
   const second = await setup().fetch(request());
@@ -79,7 +81,7 @@ test('resetting an inactive user preserves its state', async () => {
 });
 
 test('ordinary and inactive callers cannot reset credentials', async () => {
-  for (const options of [{ callerRole: 'user' }, { callerActive: false }]) {
+  for (const options of [{ callerRole: 'user' }, { callerActive: false }, { callerMustChange: true }]) {
     const h = setup(options);
     assert.equal((await h.fetch(request())).status, 403);
     assert.equal(h.events.length, 0);

@@ -49,6 +49,7 @@ export const needReportColumns = [
 
 export function needReportValue(need: Need, key: keyof Need) {
   const value = need[key];
+  if ((key === "indicator" || key === "goal") && !String(value ?? "").trim()) return "Por definir";
   if (value == null && (key === "hours" || key === "estimated_cost")) return "Por estimar";
   if (key === "quarter") return value ? `Trimestre ${String(value).replace("Q", "")}` : "Por planificar";
   if (key === "planned_start_date" || key === "planned_end_date") return value ?? need.planned_date ?? "Por planificar";
