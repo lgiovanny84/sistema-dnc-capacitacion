@@ -15,6 +15,19 @@ test('group budgets sum every activity once, normalize names and reconcile cents
  const rows=budgetByOccupationalGroup([complete,{...complete,id:'second',occupational_group:' colaboradores ',estimated_cost:.1},{...complete,id:'third',occupational_group:'CONSEJO',estimated_cost:.2},{...complete,id:'no-group',occupational_group:'',estimated_cost:50}],['COLABORADORES','Consejo','COLABORADORES']);
  assert.equal(rows.length,3);assert.equal(rows.find(row=>row.name==='COLABORADORES').amount,800.1);assert.equal(rows.reduce((s,row)=>s+row.cents,0),85030);
 });
+test('confirmed singular and plural Assembly names share one budget card and export aggregate without altering source rows',()=>{
+ const needs=[{...complete,occupational_group:'Asamblea de representante',estimated_cost:125.35},{...complete,id:'plural',occupational_group:'ASAMBLEA DE REPRESENTANTES',estimated_cost:74.65},{...complete,id:'pending',occupational_group:' Asamblea de representante ',estimated_cost:null}];
+ const groups=['Asamblea de representante','Asamblea de representantes','REPRESENTANTE ASAMBLEA'];
+ const totals=budgetByOccupationalGroup(needs,groups);
+ assert.equal(totals.length,2);
+ const assembly=totals.find(row=>row.name==='ASAMBLEA DE REPRESENTANTES');
+ assert.equal(assembly.amount,200);assert.equal(assembly.activities,3);assert.equal(assembly.known,2);assert.equal(assembly.pending,1);
+ assert.equal(totals.find(row=>row.name==='REPRESENTANTE ASAMBLEA').activities,0);
+ assert.equal(needs[0].occupational_group,'Asamblea de representante');
+ const html=renderToStaticMarkup(React.createElement(GroupBudgetCards,{needs,groups,periodName:'2027'}));
+ assert.equal((html.match(/<h3>ASAMBLEA DE REPRESENTANTES<\/h3>/g)||[]).length,1);
+ assert.match(html,/Administración → Competencias/);assert.match(html,/Guardar todos los cambios/);
+});
 test('unknown budgets, partial totals, genuine zero and configured groups without activities remain distinct',()=>{
  const data=budgetByOccupationalGroup([{...complete,estimated_cost:null},{...complete,id:'zero',occupational_group:'DIRECTIVOS',estimated_cost:0}],['COLABORADORES','DIRECTIVOS','ASAMBLEA']);
  assert.equal(data.find(row=>row.name==='COLABORADORES').known,0);assert.equal(data.find(row=>row.name==='DIRECTIVOS').known,1);assert.equal(data.find(row=>row.name==='ASAMBLEA').activities,0);
