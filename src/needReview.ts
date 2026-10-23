@@ -12,6 +12,12 @@ export const reviewFields = [
   ["modality", "Modalidad", "Planificación"],
 ] as const satisfies ReadonlyArray<readonly [keyof Need, string, string]>;
 export const normalizeGroup = (value: unknown) => String(value ?? "").trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").toUpperCase();
+// These two spellings refer to the same group, confirmed by the administrator.
+// Keep source records intact; this canonical name is for budget presentation.
+function budgetGroupName(value: string) {
+  const label = value.trim().replace(/\s+/g, " ") || "Sin grupo ocupacional";
+  return /^ASAMBLEA DE REPRESENTANTES?$/.test(normalizeGroup(label)) ? "ASAMBLEA DE REPRESENTANTES" : label;
+}
 export function missingNeedFields(need: Need) {
   return reviewFields.filter(([key]) => {
     const value = key === "planned_start_date" || key === "planned_end_date" ? need[key] || need.planned_date : need[key];
@@ -24,7 +30,7 @@ export function missingNeedFields(need: Need) {
 export function budgetByOccupationalGroup(needs: Need[], configuredGroups: string[] = []) {
   const grouped = new Map<string, { name: string; cents: number; activities: number; known: number; pending: number }>();
   const get = (name: string) => {
-    const label = name.trim() || "Sin grupo ocupacional";
+    const label = budgetGroupName(name);
     const key = normalizeGroup(label);
     if (!grouped.has(key)) grouped.set(key, { name: label, cents: 0, activities: 0, known: 0, pending: 0 });
     return grouped.get(key)!;
