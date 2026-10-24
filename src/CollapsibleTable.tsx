@@ -10,13 +10,13 @@ export function CollapsibleTable({
   className?: string;
   defaultCollapsed?: boolean;
 }) {
-  const [open, setOpen] = useCompactState(defaultCollapsed);
+  const [open, setOpen, enabled] = useCompactState(defaultCollapsed);
   const collapsed = !open;
   const contentId = useId();
 
   return (
     <section className={`collapsible-table${collapsed ? " is-collapsed" : ""}`}>
-      <div className="table-collapse-bar">
+      {enabled && <div className="table-collapse-bar">
         <button
           type="button"
           className="table-collapse-button"
@@ -27,7 +27,7 @@ export function CollapsibleTable({
           <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
           {collapsed ? "Mostrar tabla" : "Contraer tabla"}
         </button>
-      </div>
+      </div>}
       <div id={contentId} className={`table ${className}`.trim()} hidden={collapsed}>
         {children}
       </div>

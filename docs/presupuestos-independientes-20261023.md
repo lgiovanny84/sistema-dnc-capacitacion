@@ -32,11 +32,11 @@ No hay migración automática de costos estimados a asignaciones. Los períodos 
 
 Las tarjetas de grupo ocupacional toman asignaciones de actividades cuando hay un presupuesto independiente; el dinero aún no distribuido a actividades no se atribuye a un grupo. El costo estimado de la necesidad permanece separado y no se sobreescribe. La edición de una necesidad vinculada muestra su asignación por fondo.
 
-## Vista compacta
+## Vista de tablas del administrador
 
-`CompactSection` mantiene los hijos montados al contraerlos: preserva formularios y estados. `CompactWorkspace` ofrece expansión/contracción conjunta, también de tablas. La configuración central `compactLayout` permite título, orden visual y estado inicial por identificador; el valor predeterminado es contraído. Al detectar un campo obligatorio inválido se expanden secciones y se enfoca el primer campo. Navegación por teclado y foco visible permanecen disponibles.
+La contracción solo está habilitada para tablas dentro del espacio de administrador. Sus tablas comienzan contraídas y permiten Mostrar tabla/Contraer tabla, además de Expandir tablas/Contraer tablas en conjunto. Los formularios, tarjetas y paneles permanecen desplegados para ambos roles.
 
-Se aplica a indicadores, formularios esenciales, tablas, reportes, usuarios, períodos, catálogos, actividades pendientes y presupuestos. Los controles de navegación, guardado y avisos globales permanecen visibles. Los diálogos de edición conservan su comportamiento.
+Para el usuario común, las tablas siempre están visibles y no se muestran controles de contracción. Fuera de un espacio de administrador se aplica también este comportamiento visible por defecto. No se alteran los permisos de lectura, edición o guardado.
 
 ## Despliegue
 
