@@ -1,60 +1,44 @@
-# Presupuestos independientes y vista compacta
+# Presupuestos: navegación por grupo y logística adicional
 
-## Alcance y decisión del administrador
+## Flujo del administrador
 
-Institucional, Broker y Otros son recursos independientes por período. El Excel es una referencia metodológica: no se importan automáticamente los USD 30.000, USD 10.000 adicionales ni sus poblaciones. Los tres fondos empiezan en cero. La distribución por personas y prioridades conserva las ponderaciones de referencia (40/30/20/10); el porcentaje base se selecciona antes de calcular.
+1. Seleccionar el período e ingresar el presupuesto de capacitación de cada fondo: Institucional, Broker y Otros son independientes.
+2. Se muestran todos los grupos ocupacionales activos de la estructura institucional. Distribuir por porcentaje, monto, partes iguales o metodología.
+3. Pulsar un grupo para mostrar sus áreas; un área para sus departamentos; un departamento para sus temas.
+4. Cada nivel permite distribuir a todos sus elementos en una operación. La ruta superior permite regresar sin perder el borrador.
+5. Los temas se cargan de las necesidades del período y la matriz activa, filtrados por grupo, área y departamento. También puede agregarse un tema externo.
+6. Completar la distribución del presupuesto de capacitación hasta los temas. El dinero aún sin distribuir se muestra en cada nivel. Se puede guardar un avance incompleto.
+7. Solo después se habilita Generar presupuesto adicional de logística. Registrar alimentación, hospedajes y movilización por tema. Sus sumas generan el presupuesto adicional por fondo.
+8. Guardar todos los cambios confirma una revisión completa. La exportación utiliza datos guardados y conserva el formato institucional.
 
-## Uso
+Los campos logísticos vacíos permanecen por definir; cero significa que no existe ese gasto. Los totales conocidos son parciales mientras falten campos. La inversión total final queda pendiente hasta completar ese desglose. Cambiar la distribución de capacitación requiere volver a generar la etapa logística; conserva los importes digitados.
 
-1. Administración → Períodos mantiene el período institucional existente. Seleccionarlo en el encabezado.
-2. Presupuestos → Fondos independientes: ingresar los montos propios de cada fondo.
-3. Distribuir: elegir fondo y nivel, agregar áreas institucionales y luego sus departamentos activos; dentro del departamento agregar actividades o vincular necesidades del mismo período/área/departamento.
-4. Cada asignación utiliza porcentaje del padre inmediato o monto fijo. El cambio del padre recalcula los porcentajes; los montos fijos se conservan. Si dejan de caber, el guardado se bloquea.
-5. La herramienta de personas y prioridades propone montos fijos en el borrador. Al cambiar sus datos, ejecutar nuevamente el cálculo; no se ocultan cambios automáticos en esos montos. El porcentaje base usado queda en cada departamento calculado.
-6. Desglose de inversión: capacitación, hospedajes, alimentación y movilización dentro del monto asignado a la actividad. Vacío significa por definir; cero significa sin gasto. No se suman dos veces al presupuesto del fondo.
-7. Vincular gastos: el cruce automático requiere departamento/AREA REQUIRIENTE y tema únicos. Se conservan las reglas de recategorización actuales. Si el mismo tema aparece en dos fondos, queda pendiente hasta escoger uno. Una selección manual prevalece y puede quitarse para volver al cruce automático.
-8. Guardar todos los cambios confirma el período completo en una transacción. Los errores conservan el borrador. Se advierte al cambiar de módulo/período o cerrar la página con cambios pendientes.
-9. Exportar utiliza los valores guardados. El reporte presupuestario del módulo Reportes abarca el período completo y lo indica expresamente: los filtros de necesidades no se trasladan implícitamente a ese reporte.
+## Cálculos
 
-Un registro ejecutado se asigna a una sola actividad/fondo. La división de un mismo registro entre varios fondos no se incorpora en esta versión. Los gastos cancelados/anulados/rechazados conservan la exclusión utilizada por la aplicación existente.
+- Jerarquía: fondo → grupo ocupacional → área → departamento → tema.
+- Los porcentajes se aplican al padre inmediato y suman como máximo 100 %. Los montos fijos no pueden superar el presupuesto del padre. Los cambios del padre recalculan hijos porcentuales; los montos fijos se conservan y se validan.
+- Partes iguales concilia centavos por mayor resto. La metodología combina base por personas y variable por puntaje: brecha 40 %, criticidad 30 %, riesgo 20 %, impacto 10 %. El porcentaje base es editable; no se inventan personas ni puntajes faltantes. Los pesos nulos dejan dinero sin distribuir.
+- Presupuesto de capacitación: total definido en el fondo.
+- Presupuesto adicional de logística: alimentación + hospedajes + movilización de los temas del fondo.
+- Inversión total planificada: capacitación + logística completa. La logística no resta ni se limita al presupuesto de capacitación.
+- No se supone que COSTO del Excel incluya un desglose de logística. Los registros ejecutados conservan su tratamiento actual; no se inventa ejecución de alimentación, hospedajes o movilización.
 
-## Datos y seguridad
+## Catálogos y ejecución
 
-- `training_budget_plans`: una cabecera por período con revisión y documento estructurado (fondos, nodos, vínculos). El documento constituye una unidad transaccional y permite guardar la sección completa sin actualizaciones parciales de un árbol.
-- `training_budget_revisions`: historial inmutable para el cliente, con documento, autor, fecha y revisión.
-- `save_training_budget`: RPC de guardado, exclusivamente para administrador activo, no eliminado y con clave temporal ya cambiada. Valida estructura, jerarquía, pertenencia al fondo, período de las relaciones, suma de porcentajes y montos, desglose de inversión y unicidad de gastos.
-- RLS restringe lectura a ese administrador. El cliente no tiene permisos de escritura directa: no puede saltarse la RPC. La función usa un `search_path` explícito.
-- Bloqueo del período y revisión esperada evitan carreras en la primera creación y sobrescrituras de versiones anteriores.
-- Los importes se almacenan en centavos enteros y los porcentajes en centésimas de porcentaje. PostgreSQL calcula con `numeric`; JavaScript usa `BigInt` para multiplicación porcentual exacta. Las fracciones de centavo de asignaciones porcentuales quedan sin distribuir. La propuesta por personas/puntaje distribuye los residuos de su fondo calculado por mayor resto.
-- Límite: 10.000 nodos y documento de 10 MB por período. No se admite dependencia circular ni jerarquía distinta de área → departamento → actividad (área obligatoria).
+Los grupos, áreas y departamentos se obtienen de organizational_structure activa. Se deduplican las relaciones organizacionales repetidas. Los elementos de un grupo no muestran áreas de otro. Se conservan las restricciones de departamento/área institucional y el grupo se hereda durante toda la distribución.
 
-No hay migración automática de costos estimados a asignaciones. Los períodos sin presupuesto independiente conservan sus comparaciones anteriores. Guardar un presupuesto independiente activa ese origen en el resumen financiero. El banco de horas conserva su metodología: horas por participante × participantes; ejecutadas según filas individuales cargadas.
+Los cruces automáticos de ejecución requieren correspondencia única entre AREA REQUIRIENTE/departamento, tema y grupo ocupacional si el registro lo informa. Se conservan reglas de recategorización. Cuando no hay coincidencia única, queda pendiente hasta asignar manualmente una actividad. Cada registro se contabiliza una sola vez. Cancelados/anulados/rechazados conservan su exclusión existente.
 
-Las tarjetas de grupo ocupacional toman asignaciones de actividades cuando hay un presupuesto independiente; el dinero aún no distribuido a actividades no se atribuye a un grupo. El costo estimado de la necesidad permanece separado y no se sobreescribe. La edición de una necesidad vinculada muestra su asignación por fondo.
+Las tarjetas por grupo ocupacional utilizan la asignación directa al grupo, consolidada entre fondos. No suman los subtotales de áreas, departamentos o temas sobre ese mismo monto. El costo estimado de cada necesidad permanece separado.
 
-## Vista de tablas del administrador
+## Datos, seguridad y compatibilidad
 
-La contracción solo está habilitada para tablas dentro del espacio de administrador. Sus tablas comienzan contraídas y permiten Mostrar tabla/Contraer tabla, además de Expandir tablas/Contraer tablas en conjunto. Los formularios, tarjetas y paneles permanecen desplegados para ambos roles.
+training_budget_plans conserva un documento por período (fondos, nodos, vínculos y estado de generación logística). training_budget_revisions guarda autor, fecha y revisión. save_training_budget valida grupo/área/departamento, jerarquía, porcentajes, fondos, relaciones, desglose, finalización de capacitación antes de generar logística y revisión esperada. Una transacción con bloqueo del período evita guardados parciales y sobrescrituras concurrentes.
 
-Para el usuario común, las tablas siempre están visibles y no se muestran controles de contracción. Fuera de un espacio de administrador se aplica también este comportamiento visible por defecto. No se alteran los permisos de lectura, edición o guardado.
+RLS restringe el acceso al administrador activo, no eliminado y con cambio de clave inicial completado. No se permite escritura directa del cliente a tablas; el guardado pasa por la RPC. Se conservan permisos de usuarios y datos históricos. Las tablas del administrador pueden contraerse; la lista principal se muestra abierta para facilitar la distribución. El usuario común no dispone de controles de contracción.
 
-## Despliegue
+Migraciones: 20261023_independent_budgets.sql, 20261024_budget_organizational_hierarchy.sql y 20261024_budget_groups_and_logistics.sql. La revisión previa al nuevo esquema encontró cero presupuestos guardados: no fue necesario convertir asignaciones existentes. El archivo Excel original es referencia metodológica; no se importan sus montos de ejemplo.
 
-1. Aplicar `supabase/migrations/20261023_independent_budgets.sql` en el proyecto existente mediante conexión autorizada.
-2. Publicar frontend y comprobar lectura/guardado/recarga con administrador y rechazo con usuario común.
-3. Si se publica primero el frontend, los módulos previos siguen operativos y Presupuestos identifica la ausencia de migración/acceso y deshabilita Guardar. No se simula persistencia mediante almacenamiento local.
+## Validación
 
-La migración de presupuestos es independiente de la migración previa de seguridad de autenticación. No implica que dicha migración de autenticación esté aplicada.
-
-## Verificación
-
-- Pruebas automatizadas del proyecto, incluyendo ejecución real de la nueva migración en PostgreSQL embebido (PGlite): permisos, atomicidad, revisión obsoleta, exceso de monto/porcentajes, jerarquía, factores, redondeos, desglose y vínculos.
-- Navegador Chromium con React real y datos sintéticos: apertura contraída, conservación al expandir/contraer, creación departamental/actividad, guardado, cambio de fondo y ocultación del módulo para usuario.
-- Vista de escritorio 1440 px y móviles 390/320 px sin desbordamiento del documento. Tablas con desplazamiento interno.
-- Envío de formulario vacío: expansión y foco visible en Factor.
-- Descarga del Excel real y reapertura: hojas Distribución, Resumen por fondo y Gastos sin vincular, con identificación institucional y período.
-- Las pruebas de navegador usan una API simulada; no prueban persistencia en Supabase de producción. Esa comprobación requiere aplicar la migración y disponer de la conexión.
-
-## Estructura institucional obligatoria
-
-Cada fondo se distribuye primero en áreas y después en departamentos. Los selectores usan exclusivamente relaciones activas de organizational_structure; se eliminan nombres organizacionales libres y departamentos directamente bajo fondos. Las relaciones repetidas por grupo ocupacional no duplican las opciones. Los temas externos conservan entrada libre dentro de un departamento. La validación se repite en la RPC y rechaza áreas ajenas al catálogo, departamentos de otra área y duplicados dentro del mismo padre. Migración: 20261024_budget_organizational_hierarchy.sql. La revisión previa en producción encontró cero presupuestos guardados, por lo que no se modificaron asignaciones existentes.
+Pruebas de catálogo: todos los grupos, deduplicación, áreas/departamentos dependientes, temas por grupo y necesidades del período. Pruebas de cálculo: reparto masivo, centavos, cuatro niveles y logística superior al presupuesto de capacitación sin reducirlo. Pruebas PostgreSQL: permisos, revisiones, atomicidad, jerarquía, límites y rechazo de logística si queda capacitación por distribuir. Los datos de prueba en producción se verifican dentro de transacciones revertidas.
