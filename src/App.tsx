@@ -434,7 +434,7 @@ export default function App() {
               reload={load}
             /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
         ) : tab === "budgets" && role === "admin" ? (
-          activePeriod ? <BudgetModule key={activePeriod.id} state={financialBudget} error={budgetError} period={activePeriod} needs={periodNeeds} units={orgUnits} matrix={competencyMatrix} records={periodRecords} mappings={periodBudgets} onPendingChange={setConfigurationPending} onSaved={value => setFinancialBudgets(current => [...current.filter(b=>b.period_id!==value.period_id), value])}/> : <div className="alert">Seleccione un período para distribuir presupuestos.</div>
+          activePeriod ? <BudgetModule key={activePeriod.id} state={financialBudget} error={budgetError} period={activePeriod} needs={periodNeeds} units={orgUnits} records={periodRecords} mappings={periodBudgets} onPendingChange={setConfigurationPending} onSaved={value => setFinancialBudgets(current => [...current.filter(b=>b.period_id!==value.period_id), value])}/> : <div className="alert">Seleccione un período para distribuir presupuestos.</div>
         ) : tab === "admin" && role === "admin" ? (
           <Admin onPendingChange={setConfigurationPending} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
         ) : <div className="alert">No tiene acceso a esta sección.</div>}

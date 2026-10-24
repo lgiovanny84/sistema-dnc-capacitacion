@@ -11,7 +11,7 @@ test('administrator drills group → area → department → topic, distributes 
  const react={...require('react'),useEffect(){},useState(initial){const i=index++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v];}};
  const ctx={module:{exports:{}},exports:{},crypto:{randomUUID:()=>String(++id)},__db:{async rpc(name,args){saved=args.p_payload;return{data:{revision:1,payload:saved},error:null}}},require(n){return n==='react'?react:require(n)}};
  vm.runInNewContext(result.outputFiles[0].text,ctx);
- const props={state:null,error:'',period:{id:'period',name:'2027'},units:[{group_name:'Colaboradores',area_name:'Negocios',department_name:'Marketing',active:true}],needs:[],matrix:[{group_name:'Colaboradores',area:'Negocios',department:'Marketing',competency:'Ventas',active:true}],records:[],mappings:[],onSaved(){},onPendingChange(){}};
+ const props={state:null,error:'',period:{id:'period',name:'2027'},units:[{group_name:'Colaboradores',area_name:'Negocios',department_name:'Marketing',active:true}],needs:[{id:'dnc',competency:'Ventas',occupational_group:'Colaboradores',area:'Negocios',department:'Marketing'}],matrix:[{group_name:'Colaboradores',area:'Negocios',department:'Marketing',competency:'Ventas',active:true}],records:[],mappings:[],onSaved(){},onPendingChange(){}};
  let tree;function render(){index=0;tree=ctx.module.exports.BudgetModule(props);return tree;}
  function button(label){const n=walk(tree).find(n=>n.type==='button'&&n.props.children===label);assert.ok(n,label);return n;}
  function input(label,value){const n=walk(tree).find(n=>n.type==='input'&&n.props['aria-label']===label);assert.ok(n,label);n.props.onChange({target:{value}});render();}

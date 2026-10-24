@@ -6,7 +6,7 @@
 2. Se muestran todos los grupos ocupacionales activos de la estructura institucional. Distribuir por porcentaje, monto, partes iguales o metodología.
 3. Pulsar un grupo para mostrar sus áreas; un área para sus departamentos; un departamento para sus temas.
 4. Cada nivel permite distribuir a todos sus elementos en una operación. La ruta superior permite regresar sin perder el borrador.
-5. Los temas se cargan de las necesidades del período y la matriz activa, filtrados por grupo, área y departamento. También puede agregarse un tema externo.
+5. Los temas se cargan únicamente de las necesidades DNC del período, filtradas por grupo, área y departamento. No se ofrecen temas de la matriz sin selección DNC ni creación de temas externos en Presupuestos.
 6. Completar la distribución del presupuesto de capacitación hasta los temas. El dinero aún sin distribuir se muestra en cada nivel. Se puede guardar un avance incompleto.
 7. Solo después se habilita Generar presupuesto adicional de logística. Registrar alimentación, hospedajes y movilización por tema. Sus sumas generan el presupuesto adicional por fondo.
 8. Guardar todos los cambios confirma una revisión completa. La exportación utiliza datos guardados y conserva el formato institucional.
@@ -42,3 +42,7 @@ Migraciones: 20261023_independent_budgets.sql, 20261024_budget_organizational_hi
 ## Validación
 
 Pruebas de catálogo: todos los grupos, deduplicación, áreas/departamentos dependientes, temas por grupo y necesidades del período. Pruebas de cálculo: reparto masivo, centavos, cuatro niveles y logística superior al presupuesto de capacitación sin reducirlo. Pruebas PostgreSQL: permisos, revisiones, atomicidad, jerarquía, límites y rechazo de logística si queda capacitación por distribuir. Los datos de prueba en producción se verifican dentro de transacciones revertidas.
+
+## Temas exclusivamente desde DNC
+
+La migración 20261024_budget_topics_from_dnc.sql exige vínculo a una necesidad del mismo período, área y departamento cuyo tema coincida. El cliente deduplica temas repetidos y vincula una DNC representativa de forma determinista. Los cambios de nombre de una DNC vinculada se reflejan al cargar la pantalla. Las asignaciones cuyo origen ya no exista se conservan para revisión, fuera de la lista de temas disponibles: no se borran importes automáticamente y no se permite guardarlas sin retirarlas o corregir primero la DNC. El retiro explícito conserva registros ejecutados e historial y deja la asignación por redistribuir.
