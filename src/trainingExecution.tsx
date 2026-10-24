@@ -228,7 +228,7 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
   const relevantKeys = new Set(annual.map((b) => norm(b.requesting_area_name || b.department_name)));
   const usedRows = records.filter((r) => isCompleted(r.status) && relevantKeys.has(norm(r.requesting_area)));
   const used = usedRows.reduce((sum, r) => sum + Number(r.cost), 0);
-  const fulfilled = usedRows.reduce((sum, r) => sum + Number(r.duration), 0);
+  const fulfilled = (financial ? records.filter(r => isCompleted(r.status)) : usedRows).reduce((sum, r) => sum + Number(r.duration), 0);
   const unmatched = [...new Set(records.filter((r) => isCompleted(r.status) && !relevantKeys.has(norm(r.requesting_area))).map((r) => r.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return (
     <>
