@@ -1,3 +1,4 @@
+import { reportNeeds } from "./reportFilters";
 import { CompactWorkspace, CompactSection } from "./CompactSection";
 import { BudgetContext, BudgetModule, BudgetFinancialSummary, exportBudget } from "./BudgetModule";
 import type { BudgetState } from "./budgetModel";
@@ -262,15 +263,7 @@ export default function App() {
   const periodBatches = activePeriod ? importBatches.filter((batch) => batch.period_id === activePeriod.id) : [];
   const financialBudget = financialBudgets.find(b => b.period_id === activePeriod?.id) ?? null;
   const periodBudgets = activePeriod ? budgetAllocations.filter((allocation) => allocation.period_id === activePeriod.id) : [];
-  const visible = periodNeeds.filter(
-    (n) =>
-      (!filters.type || n.type === filters.type) &&
-      (!filters.factor || n.factor === filters.factor) &&
-      (!filters.status || n.status === filters.status) &&
-      (!filters.area || n.area === filters.area) &&
-      (!filters.department || n.department === filters.department) &&
-      (!filters.occupational_group || n.occupational_group === filters.occupational_group),
-  );
+  const visible = reportNeeds(periodNeeds, filters, role);
   const totalHours = visible.reduce(
       (s, n) => s + Number(n.hours) * Number(n.participants),
       0,
@@ -370,7 +363,7 @@ export default function App() {
             <h1>{pageMeta[tab]?.title ?? "Gestión de capacitación"}</h1>
             <p className="page-description">{pageMeta[tab]?.description}</p>
           </div>
-          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { if(configurationPending && !window.confirm("Tiene cambios sin guardar. ¿Cambiar de período y descartarlos?")) return; setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
+          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { if(configurationPending && !window.confirm("Tiene cambios sin guardar. ¿Cambiar de período y descartarlos?")) return; setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length || (tab === "reports" && role !== "admin")}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
         {notice && (
           <div className="alert">
@@ -420,6 +413,7 @@ export default function App() {
           />
         ) : tab === "reports" ? (
           <Reports
+            role={role}
             needs={visible}
             period={activePeriod}
             filters={filters}
@@ -1069,6 +1063,7 @@ function List({
   );
 }
 function Reports({
+  role = "user",
   period,
   needs,
   filters,
@@ -1078,6 +1073,7 @@ function Reports({
   budget,
   exportCSV,
 }: {
+  role?: Role;
   period?: PlanningPeriod;
   needs: Need[];
   filters: Record<string, string>;
@@ -1093,14 +1089,16 @@ function Reports({
     setExporting(true); setExportError("");
     try {
       const labels: Record<string, string> = { type: "Tipo", factor: "Factor", status: "Estado", area: "Área", department: "Departamento", occupational_group: "Grupo ocupacional" };
-      const applied = Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `${labels[key] ?? key}: ${value}`).join(". ");
+      const applied = role === "admin" ? Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `${labels[key] ?? key}: ${value}`).join(". ") : "Consulta del período y alcance autorizado";
       const book = await buildNeedsWorkbook(needs, period ?? { name: "Sin período" }, applied, await institutionalLogo());
       await downloadInstitutionalWorkbook(book, reportFilename("reporte_necesidades", period?.name ?? "sin-periodo"));
     } catch { setExportError("No se pudo exportar el reporte. Intente nuevamente."); }
     finally { setExporting(false); }
   }
-  const set = (k: string, v: string) =>
+  const set = (k: string, v: string) => {
+    if (role !== "admin") return;
     setFilters((x: any) => ({ ...x, [k]: v, ...(k === "area" ? { department: "", occupational_group: "" } : k === "department" ? { occupational_group: "" } : {}) }));
+  };
   return (
     <>
       <div className="report-heading">
@@ -1110,7 +1108,7 @@ function Reports({
           <small>Generado: {new Date().toLocaleString("es-EC")}</small>
         </div>
       </div>
-      <CompactSection title="Filtros de búsqueda"><div className="panel filters">
+      {role === "admin" ? <CompactSection title="Filtros de búsqueda"><div className="panel filters">
         <Select
           label="Tipo"
           value={filters.type}
@@ -1152,9 +1150,9 @@ function Reports({
         >
           Limpiar
         </button>
-      </div></CompactSection>
+      </div></CompactSection> : <p className="planning-note">Consulta del período seleccionado y de la información autorizada para su usuario. Los filtros son exclusivos del administrador.</p>}
       <CompactSection title="Indicadores del período"><section className="cards">
-        <Card label="Registros filtrados" value={needs.length} />
+        <Card label={role === "admin" ? "Registros filtrados" : "Registros del período"} value={needs.length} />
         <Card label="Horas-persona" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
         <Card
           label="Presupuesto"
