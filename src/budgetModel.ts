@@ -20,7 +20,7 @@ export function calculateBudget(data: BudgetData) {
     let distributed = 0;
     for (const n of children) {
       const p = data.nodes.find(v => v.id === parent);
-      if (!(n.kind === 'area' && !p || n.kind === 'department' && (!p || p.kind === 'area') || n.kind === 'activity' && p?.kind === 'department')) errors.push(`${n.name}: jerarquía no válida.`);
+      if (!(n.kind === 'area' && !p || n.kind === 'department' && p?.kind === 'area' || n.kind === 'activity' && p?.kind === 'department')) errors.push(`${n.name}: jerarquía no válida.`);
       if (!n.name.trim() || !Number.isSafeInteger(n.value) || n.value < 0 || n.value > (n.mode === 'percent' ? 10000 : 1e12)) errors.push(`${n.name || 'Nueva asignación'}: revise nombre y valor.`);
       const value = n.mode === 'percent' && Number.isSafeInteger(amount) && Number.isSafeInteger(n.value) ? Number(BigInt(amount) * BigInt(n.value) / 10000n) : n.mode === 'amount' ? n.value : 0;
       distributed += value; visit(n.id, fund, value, depth + 1);
