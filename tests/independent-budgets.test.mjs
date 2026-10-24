@@ -65,6 +65,14 @@ test('database rejects cross-fund parents, cycles, invalid links and doubled exp
  d=fixture();d.links=[{record_id:record,node_id:activity},{record_id:record,node_id:activity}];await assert.rejects(save(1,d),/dos veces/);
  d=fixture();d.links=[{record_id:period,node_id:activity}];await assert.rejects(save(1,d),/Vinculación/);
 });
+test('upgrading an area-first budget preserves funds, every existing allocation and its history',async()=>{
+ await caller(admin);await db.exec('reset role;begin');const legacy=fixture();legacy.nodes=legacy.nodes.filter(n=>n.kind!=='group');legacy.nodes.find(n=>n.kind==='area').parent='Institucional';legacy.nodes.find(n=>n.kind==='area').value=2000;
+ await db.query('update training_budget_plans set payload=$1 where period_id=$2',[JSON.stringify(legacy),period]);
+ await db.exec(readFileSync(new URL('../supabase/migrations/20261024_preserve_existing_budget_groups.sql',import.meta.url),'utf8'));
+ const row=(await db.query('select * from training_budget_plans')).rows[0];assert.equal(row.revision,2);assert.deepEqual(row.payload.funds,legacy.funds);
+ const calc=calculateBudget(row.payload);assert.equal(calc.amounts.get(areaId),800000);assert.equal(calc.amounts.get(dep),120000);assert.equal(calc.amounts.get(activity),120000);assert.equal(row.payload.nodes.find(n=>n.kind==='group').value,800000);
+ assert.equal((await db.query('select * from training_budget_revisions where revision=1')).rows.length,1);await db.exec('rollback');
+});
 test('ordinary and inactive admins cannot read/write; direct table writes are forbidden',async()=>{
  await caller(other);assert.equal((await db.query('select * from training_budget_plans')).rows.length,0);await assert.rejects(save(1,fixture()),/administrador/);
  await caller(admin);await assert.rejects(db.query("update training_budget_plans set payload='{}'"),/permission denied/);

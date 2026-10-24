@@ -37,7 +37,7 @@ training_budget_plans conserva un documento por período (fondos, nodos, víncul
 
 RLS restringe el acceso al administrador activo, no eliminado y con cambio de clave inicial completado. No se permite escritura directa del cliente a tablas; el guardado pasa por la RPC. Se conservan permisos de usuarios y datos históricos. Las tablas del administrador pueden contraerse; la lista principal se muestra abierta para facilitar la distribución. El usuario común no dispone de controles de contracción.
 
-Migraciones: 20261023_independent_budgets.sql, 20261024_budget_organizational_hierarchy.sql y 20261024_budget_groups_and_logistics.sql. La revisión previa al nuevo esquema encontró cero presupuestos guardados: no fue necesario convertir asignaciones existentes. El archivo Excel original es referencia metodológica; no se importan sus montos de ejemplo.
+Migraciones: 20261023_independent_budgets.sql, 20261024_budget_organizational_hierarchy.sql y 20261024_budget_groups_and_logistics.sql. Durante la actualización se guardó una asignación con la pantalla anterior. La migración 20261024_preserve_existing_budget_groups.sql añade grupos solo cuando el catálogo identifica uno de forma única; convierte las áreas a montos fijos para conservar exactamente sus valores y todos los descendientes. El presupuesto original queda en el historial. Los fondos permanecen intactos. El archivo Excel original es referencia metodológica; no se importan sus montos de ejemplo.
 
 ## Validación
 
