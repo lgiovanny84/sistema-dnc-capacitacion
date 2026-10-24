@@ -378,7 +378,7 @@ export default function App() {
             <button onClick={() => setNotice("")}>×</button>
           </div>
         )}
-        <CompactWorkspace key={`${tab}-${activePeriod?.id}`}>
+        <CompactWorkspace enabled={role === "admin"} key={`${tab}-${activePeriod?.id}`}>
         {loading ? (
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
