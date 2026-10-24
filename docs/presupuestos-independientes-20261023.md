@@ -8,7 +8,7 @@ Institucional, Broker y Otros son recursos independientes por período. El Excel
 
 1. Administración → Períodos mantiene el período institucional existente. Seleccionarlo en el encabezado.
 2. Presupuestos → Fondos independientes: ingresar los montos propios de cada fondo.
-3. Distribuir: elegir fondo y nivel, agregar áreas o departamentos; dentro del departamento agregar actividades o vincular necesidades del mismo período/área/departamento.
+3. Distribuir: elegir fondo y nivel, agregar áreas institucionales y luego sus departamentos activos; dentro del departamento agregar actividades o vincular necesidades del mismo período/área/departamento.
 4. Cada asignación utiliza porcentaje del padre inmediato o monto fijo. El cambio del padre recalcula los porcentajes; los montos fijos se conservan. Si dejan de caber, el guardado se bloquea.
 5. La herramienta de personas y prioridades propone montos fijos en el borrador. Al cambiar sus datos, ejecutar nuevamente el cálculo; no se ocultan cambios automáticos en esos montos. El porcentaje base usado queda en cada departamento calculado.
 6. Desglose de inversión: capacitación, hospedajes, alimentación y movilización dentro del monto asignado a la actividad. Vacío significa por definir; cero significa sin gasto. No se suman dos veces al presupuesto del fondo.
@@ -26,7 +26,7 @@ Un registro ejecutado se asigna a una sola actividad/fondo. La división de un m
 - RLS restringe lectura a ese administrador. El cliente no tiene permisos de escritura directa: no puede saltarse la RPC. La función usa un `search_path` explícito.
 - Bloqueo del período y revisión esperada evitan carreras en la primera creación y sobrescrituras de versiones anteriores.
 - Los importes se almacenan en centavos enteros y los porcentajes en centésimas de porcentaje. PostgreSQL calcula con `numeric`; JavaScript usa `BigInt` para multiplicación porcentual exacta. Las fracciones de centavo de asignaciones porcentuales quedan sin distribuir. La propuesta por personas/puntaje distribuye los residuos de su fondo calculado por mayor resto.
-- Límite: 10.000 nodos y documento de 10 MB por período. No se admite dependencia circular ni jerarquía distinta de área → departamento → actividad (área opcional).
+- Límite: 10.000 nodos y documento de 10 MB por período. No se admite dependencia circular ni jerarquía distinta de área → departamento → actividad (área obligatoria).
 
 No hay migración automática de costos estimados a asignaciones. Los períodos sin presupuesto independiente conservan sus comparaciones anteriores. Guardar un presupuesto independiente activa ese origen en el resumen financiero. El banco de horas conserva su metodología: horas por participante × participantes; ejecutadas según filas individuales cargadas.
 
@@ -54,3 +54,7 @@ La migración de presupuestos es independiente de la migración previa de seguri
 - Envío de formulario vacío: expansión y foco visible en Factor.
 - Descarga del Excel real y reapertura: hojas Distribución, Resumen por fondo y Gastos sin vincular, con identificación institucional y período.
 - Las pruebas de navegador usan una API simulada; no prueban persistencia en Supabase de producción. Esa comprobación requiere aplicar la migración y disponer de la conexión.
+
+## Estructura institucional obligatoria
+
+Cada fondo se distribuye primero en áreas y después en departamentos. Los selectores usan exclusivamente relaciones activas de organizational_structure; se eliminan nombres organizacionales libres y departamentos directamente bajo fondos. Las relaciones repetidas por grupo ocupacional no duplican las opciones. Los temas externos conservan entrada libre dentro de un departamento. La validación se repite en la RPC y rechaza áreas ajenas al catálogo, departamentos de otra área y duplicados dentro del mismo padre. Migración: 20261024_budget_organizational_hierarchy.sql. La revisión previa en producción encontró cero presupuestos guardados, por lo que no se modificaron asignaciones existentes.

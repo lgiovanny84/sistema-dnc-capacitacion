@@ -5,9 +5,9 @@ import {build} from 'esbuild';
 import {PGlite} from '@electric-sql/pglite';
 const bundle=await build({entryPoints:[new URL('../src/budgetModel.ts',import.meta.url).pathname],bundle:true,write:false,platform:'node',format:'esm'});
 const {emptyBudget,calculateBudget,distributeMethod,budgetExecution}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
-const period='11111111-1111-4111-8111-111111111111',admin='22222222-2222-4222-8222-222222222222',other='33333333-3333-4333-8333-333333333333',dep='44444444-4444-4444-8444-444444444444',activity='55555555-5555-4555-8555-555555555555',record='66666666-6666-4666-8666-666666666666';
+const period='11111111-1111-4111-8111-111111111111',admin='22222222-2222-4222-8222-222222222222',other='33333333-3333-4333-8333-333333333333',dep='44444444-4444-4444-8444-444444444444',areaId='88888888-8888-4888-8888-888888888888',activity='55555555-5555-4555-8555-555555555555',record='66666666-6666-4666-8666-666666666666';
 const node=(id,parent,kind='department',value=1500)=>({id,parent,kind,value,fund:'Institucional',name:kind==='department'?'Marketing':'Ventas',area:'Negocios',department:'Marketing',group:'Colaboradores',need_id:null,mode:'percent',people:1,gap:1,criticality:0,risk:0,impact:0});
-function fixture(){const d=emptyBudget();d.funds[0].cents=4000000;d.funds[1].cents=200000;d.nodes=[node(dep,'Institucional'),node(activity,dep,'activity',10000)];return d;}
+function fixture(){const d=emptyBudget();d.funds[0].cents=4000000;d.funds[1].cents=200000;d.nodes=[node(dep,areaId),node(activity,dep,'activity',10000),{...node(areaId,'Institucional','area',10000),name:'Negocios',area:'Negocios',department:''}];return d;}
 test('cascade keeps independent funds, fixed children, and rejects over-allocation',()=>{
  const d=fixture();let c=calculateBudget(d);assert.equal(c.amounts.get(dep),600000);assert.equal(c.amounts.get(activity),600000);assert.equal(c.remaining.get('Broker'),200000);
  d.funds[0].cents=2000000;c=calculateBudget(d);assert.equal(c.amounts.get(activity),300000);
@@ -31,10 +31,12 @@ before(async()=>{
  create table profiles(id uuid primary key,role text,active boolean,deleted_at timestamptz,must_change_password boolean);
  create table planning_periods(id uuid primary key);
  create table training_needs(id uuid primary key,period_id uuid,area text,department text);
+ create table organizational_structure(area_name text,department_name text,active boolean);insert into organizational_structure values('Negocios','Marketing',true),('Negocios','Otro',true);
  create table training_records(id uuid primary key,period_id uuid);
  insert into profiles values('${admin}','admin',true,null,false),('${other}','user',true,null,false);
  insert into planning_periods values('${period}');insert into training_records values('${record}','${period}');`);
  await db.exec(readFileSync(new URL('../supabase/migrations/20261023_independent_budgets.sql',import.meta.url),'utf8'));
+ await db.exec(readFileSync(new URL('../supabase/migrations/20261024_budget_organizational_hierarchy.sql',import.meta.url),'utf8'));
 });
 after(()=>db.close());
 async function caller(id){await db.exec('reset role');await db.query("select set_config('app.uid',$1,false)",[id]);await db.exec('set role authenticated');}
@@ -45,7 +47,9 @@ test('database atomically saves independent funds, audits revisions and prevents
  await assert.rejects(save(0,fixture()),/cambió/);
  let d=fixture();d.nodes[1].value=10001;await assert.rejects(save(1,d),/rango/);
  d.nodes[1].mode='amount';d.nodes[1].value=700000;await assert.rejects(save(1,d),/supera/);
- d=fixture();d.nodes.push({...node('77777777-7777-4777-8777-777777777777','Institucional'),value:9000});await assert.rejects(save(1,d),/supera/);
+ d=fixture();d.nodes.push({...node('77777777-7777-4777-8777-777777777777',areaId),name:'Otro',department:'Otro',value:9000});await assert.rejects(save(1,d),/supera/);
+ d=fixture();d.nodes[0].parent='Institucional';await assert.rejects(save(1,d),/Primero/);
+ d=fixture();d.nodes[0].name='Inventado';d.nodes[0].department='Inventado';await assert.rejects(save(1,d),/pertenece/);
  d=fixture();d.nodes[1].costs={training:600001};await assert.rejects(save(1,d),/desglose/);
  assert.equal((await db.query('select revision from training_budget_plans')).rows[0].revision,1);
 });
