@@ -1,15 +1,17 @@
-import { ReactNode, useId, useState } from "react";
+import { compactLayout, useCompactState } from "./CompactSection";
+import { ReactNode, useId } from "react";
 
 export function CollapsibleTable({
   children,
   className = "",
-  defaultCollapsed = false,
+  defaultCollapsed = compactLayout.defaultCollapsed,
 }: {
   children: ReactNode;
   className?: string;
   defaultCollapsed?: boolean;
 }) {
-  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [open, setOpen] = useCompactState(defaultCollapsed);
+  const collapsed = !open;
   const contentId = useId();
 
   return (
@@ -20,7 +22,7 @@ export function CollapsibleTable({
           className="table-collapse-button"
           aria-expanded={!collapsed}
           aria-controls={contentId}
-          onClick={() => setCollapsed((current) => !current)}
+          onClick={() => setOpen(!open)}
         >
           <span aria-hidden="true">{collapsed ? "▸" : "▾"}</span>
           {collapsed ? "Mostrar tabla" : "Contraer tabla"}

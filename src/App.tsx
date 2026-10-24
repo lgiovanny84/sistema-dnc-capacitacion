@@ -1,3 +1,6 @@
+import { CompactWorkspace, CompactSection } from "./CompactSection";
+import { BudgetContext, BudgetModule, BudgetFinancialSummary, exportBudget } from "./BudgetModule";
+import type { BudgetState } from "./budgetModel";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { configured, supabase } from "./supabase";
@@ -62,6 +65,7 @@ const pageMeta: Record<string, { title: string; description: string }> = {
   list: { title: "Gestión de necesidades", description: "Consulta, seguimiento y actualización de las necesidades registradas." },
   reports: { title: "Reportes y análisis", description: "Indicadores y reportes filtrados para la toma de decisiones." },
   execution: { title: "Capacitación ejecutada", description: "Control de ejecución, inversión, horas y cobertura institucional." },
+  budgets: { title: "Presupuestos", description: "Recursos independientes por período, distribución y ejecución." },
   admin: { title: "Administración", description: "Configuración de períodos, usuarios, catálogos y matrices institucionales." },
 };
 
@@ -72,6 +76,7 @@ function NavIcon({ name }: { name: string }) {
     list: <><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>,
     reports: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V3" /><path d="M2 21h22" /></>,
     execution: <><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14" /><path d="M8 8h8M8 12h8M8 16h5M2 21h20" /></>,
+    budgets: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></>,
     admin: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-4v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H3v-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6V3h4v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.1v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
   };
   return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
@@ -94,6 +99,8 @@ export default function App() {
     [orgUnits, setOrgUnits] = useState<OrgUnit[]>([]),
     [trainingRecords, setTrainingRecords] = useState<TrainingRecord[]>([]),
     [budgetAllocations, setBudgetAllocations] = useState<BudgetAllocation[]>([]),
+    [financialBudgets, setFinancialBudgets] = useState<BudgetState[]>([]),
+    [budgetError, setBudgetError] = useState(""),
     [importBatches, setImportBatches] = useState<ImportBatch[]>([]),
     [periods, setPeriods] = useState<PlanningPeriod[]>([]),
     [competencyMatrix, setCompetencyMatrix] = useState<CompetencyMatrixRow[]>([]),
@@ -133,7 +140,7 @@ export default function App() {
         authUserId.current = s?.user.id ?? null;
         setProfile(null); setRole("user"); setNeeds([]); setCatalogs(fallback);
         setOrgUnits([]); setCompetencyMatrix([]); setPeriods([]);
-        setTrainingRecords([]); setBudgetAllocations([]); setImportBatches([]);
+        setTrainingRecords([]); setBudgetAllocations([]); setImportBatches([]); setFinancialBudgets([]);
         setConfigurationPending(0); setAccessBlocked(false);
       }
       setSession(s);
@@ -201,6 +208,10 @@ export default function App() {
         });
       }
       if (p?.role === "admin") {
+        const financial = await supabase!.from("training_budget_plans").select("*").order("period_id");
+        if (request !== loadVersion.current || session?.user.id !== authUserId.current) return;
+        setBudgetError(financial.error ? "El módulo de presupuestos aún no está disponible en la base de datos. Revise la migración y el acceso." : "");
+        if (!financial.error) setFinancialBudgets((financial.data ?? []) as BudgetState[]);
         const [{ data: executed, error: executedError }, { data: allocations, error: allocationsError }, { data: batches, error: batchesError }] =
           await Promise.all([
             fetchAllReportRows<TrainingRecord>("training_records", [{ field: "start_date", ascending: false }]),
@@ -217,6 +228,7 @@ export default function App() {
         }
       } else if (!pe) {
         setTrainingRecords([]);
+        setFinancialBudgets([]);
         setBudgetAllocations([]);
         setImportBatches([]);
       }
@@ -248,6 +260,7 @@ export default function App() {
   const periodNeeds = activePeriod ? needs.filter((need) => need.period_id === activePeriod.id).map(need => needWithCompetencyGroup(need, competencyMatrix)) : [];
   const periodRecords = activePeriod ? trainingRecords.filter((record) => record.period_id === activePeriod.id) : [];
   const periodBatches = activePeriod ? importBatches.filter((batch) => batch.period_id === activePeriod.id) : [];
+  const financialBudget = financialBudgets.find(b => b.period_id === activePeriod?.id) ?? null;
   const periodBudgets = activePeriod ? budgetAllocations.filter((allocation) => allocation.period_id === activePeriod.id) : [];
   const visible = periodNeeds.filter(
     (n) =>
@@ -297,7 +310,7 @@ export default function App() {
     URL.revokeObjectURL(a.href);
   }
   return (
-    <div className={`shell ${menuCollapsed ? "collapsed" : ""}`}>
+    <BudgetContext.Provider value={role === "admin" ? financialBudget : null}><div className={`shell ${menuCollapsed ? "collapsed" : ""}`}>
       <aside>
         <button
           className="menu-toggle"
@@ -322,7 +335,7 @@ export default function App() {
             ["list", "Necesidades"],
             ["reports", "Reportes"],
             ...(role === "admin" ? [["execution", "Ejecución y KPIs"]] : []),
-            ...(role === "admin" ? [["admin", "Administración"]] : []),
+            ...(role === "admin" ? [["budgets", "Presupuestos"], ["admin", "Administración"]] : []),
           ].map(([id, label]) => (
             <button
               className={tab === id ? "active" : ""}
@@ -357,7 +370,7 @@ export default function App() {
             <h1>{pageMeta[tab]?.title ?? "Gestión de capacitación"}</h1>
             <p className="page-description">{pageMeta[tab]?.description}</p>
           </div>
-          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
+          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { if(configurationPending && !window.confirm("Tiene cambios sin guardar. ¿Cambiar de período y descartarlos?")) return; setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
         {notice && (
           <div className="alert">
@@ -365,6 +378,7 @@ export default function App() {
             <button onClick={() => setNotice("")}>×</button>
           </div>
         )}
+        <CompactWorkspace key={`${tab}-${activePeriod?.id}`}>
         {loading ? (
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
@@ -425,15 +439,19 @@ export default function App() {
               departments={unique(orgUnits.map((unit) => unit.department_name))}
               reload={load}
             /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
+        ) : tab === "budgets" && role === "admin" ? (
+          activePeriod ? <BudgetModule key={activePeriod.id} state={financialBudget} error={budgetError} period={activePeriod} needs={periodNeeds} units={orgUnits} records={periodRecords} mappings={periodBudgets} onPendingChange={setConfigurationPending} onSaved={value => setFinancialBudgets(current => [...current.filter(b=>b.period_id!==value.period_id), value])}/> : <div className="alert">Seleccione un período para distribuir presupuestos.</div>
         ) : tab === "admin" && role === "admin" ? (
           <Admin onPendingChange={setConfigurationPending} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
         ) : <div className="alert">No tiene acceso a esta sección.</div>}
+        {tab === "reports" && role === "admin" && financialBudget && activePeriod && <CompactSection title="Reporte de presupuestos independientes" summary="Distribución y ejecución del período completo"><div className="panel"><p>Este reporte utiliza el período completo; los filtros de necesidades se aplican únicamente al reporte de necesidades.</p><button className="secondary" onClick={()=>void exportBudget(financialBudget.payload,periodRecords,periodBudgets,activePeriod,periodNeeds).catch(()=>setNotice("No se pudo generar el reporte de presupuestos."))}>Exportar distribución y ejecución a Excel</button><BudgetFinancialSummary data={financialBudget.payload} records={periodRecords} mappings={periodBudgets} periodName={activePeriod.name}/></div></CompactSection>}
+        </CompactWorkspace>
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
           trazabilidad
         </footer>
       </main>
-    </div>
+    </div></BudgetContext.Provider>
   );
 }
 function Setup() {
@@ -729,7 +747,7 @@ function Dashboard({
 }) {
   return (
     <>
-      <section className="cards">
+      <CompactSection title="Indicadores del período"><section className="cards">
         <Card label="Necesidades registradas" value={needs.length} />
         <Card
           label="Pendientes de revisión"
@@ -743,18 +761,18 @@ function Dashboard({
             currency: "USD",
           })}
         />
-      </section>
+      </section></CompactSection>
       {role !== "admin" && <PlanningNote needs={needs} />}
       {role === "admin" && adminOverview}
       {role === "admin" && (
         <BudgetSummary records={trainingRecords} budgets={budgetAllocations} plans={needs} periodName={periodName} />
       )}
       <section className="grid2">
-        <div className="panel">
+        <CompactSection title="Distribución por factor"><div className="panel">
           <h2>Distribución por factor</h2>
           <Bars needs={needs} field="factor" />
-        </div>
-        <div className="panel">
+        </div></CompactSection>
+        <CompactSection title="Alertas de gestión"><div className="panel">
           <h2>Alertas de gestión</h2>
           <div className="callout">
             <b>
@@ -774,12 +792,12 @@ function Dashboard({
             </b>
             <span>necesidades de prioridad alta o crítica</span>
           </div>
-        </div>
+        </div></CompactSection>
       </section>
-      <div className="panel">
+      <CompactSection title="Últimos registros"><div className="panel">
         <h2>Últimos registros</h2>
         <MiniTable needs={needs.slice(0, 6)} />
-      </div>
+      </div></CompactSection>
     </>
   );
 }
@@ -968,7 +986,7 @@ function List({
     }
   }
   return (
-    <div className="panel">
+    <CompactSection title="Matriz consolidada"><div className="panel">
       {editing && role === "admin" && <Modal title="Modificar necesidad de capacitación" busy={editBusy} onClose={closeEditor}>
         <NeedForm catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={userId} initialNeed={editing} period={period}
           onDirtyChange={setEditDirty} onSavingChange={setEditBusy} onCancel={closeEditor}
@@ -1047,7 +1065,7 @@ function List({
             ))}
         </div>
       )}
-    </div>
+    </div></CompactSection>
   );
 }
 function Reports({
@@ -1092,7 +1110,7 @@ function Reports({
           <small>Generado: {new Date().toLocaleString("es-EC")}</small>
         </div>
       </div>
-      <div className="panel filters">
+      <CompactSection title="Filtros de búsqueda"><div className="panel filters">
         <Select
           label="Tipo"
           value={filters.type}
@@ -1134,8 +1152,8 @@ function Reports({
         >
           Limpiar
         </button>
-      </div>
-      <section className="cards">
+      </div></CompactSection>
+      <CompactSection title="Indicadores del período"><section className="cards">
         <Card label="Registros filtrados" value={needs.length} />
         <Card label="Horas-persona" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
         <Card
@@ -1145,20 +1163,20 @@ function Reports({
             currency: "USD",
           })}
         />
-      </section>
+      </section></CompactSection>
       <PlanningNote needs={needs} />
       <section className="grid2">
-        <div className="panel">
+        <CompactSection title="Por área"><div className="panel">
           <h2>Por área</h2>
           <Bars needs={needs} field="area" />
-        </div>
-        <div className="panel">
+        </div></CompactSection>
+        <CompactSection title="Por prioridad"><div className="panel">
           <h2>Por prioridad</h2>
           <Bars needs={needs} field="priority" />
-        </div>
+        </div></CompactSection>
       </section>
-      <div className="panel"><h2>Por grupo ocupacional</h2><Bars needs={needs} field="occupational_group" /></div>
-      <div className="panel">
+      <CompactSection title="Por grupo ocupacional"><div className="panel"><h2>Por grupo ocupacional</h2><Bars needs={needs} field="occupational_group" /></div></CompactSection>
+      <CompactSection title="Detalle para toma de decisiones"><div className="panel">
         <div className="panelhead">
           <h2>Detalle para toma de decisiones</h2>
           <div>
@@ -1171,7 +1189,7 @@ function Reports({
         </div>
         {exportError && <div className="error" role="alert">{exportError}</div>}
         <MiniTable needs={needs} />
-      </div>
+      </div></CompactSection>
     </>
   );
 }
@@ -1216,11 +1234,11 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
     setMessage(error?.message ?? "Período eliminado.");
     if (!error) await reload();
   }
-  return <div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
+  return <CompactSection title="Períodos institucionales" summary={`${periods.length} períodos · ${Object.keys(drafts).length} cambios pendientes`}><div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
     <form className="inline period-create" onSubmit={createPeriod}><label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label><label>Desde<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label>Hasta<input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label><button className="primary">Crear período</button></form>
     {message && <div className="statusmsg">{message}</div>}
     <CollapsibleTable><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></CollapsibleTable>
-  </div>;
+  </div></CompactSection>;
 }
 
 function Admin({
@@ -1471,7 +1489,7 @@ function Admin({
           }}
         />
       )}
-      {section === "users" && <div className="panel">
+      {section === "users" && <CompactSection title="Usuarios y accesos" summary={`${users.length} usuarios · ${Object.keys(userDrafts).length} cambios pendientes`}><div className="panel">
         <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Active, inactive o restaure accesos y guarde todos los cambios. La restauración conserva el perfil y su histórico. Genere una clave temporal para recuperar el ingreso.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers || Boolean(resettingUserId)} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
         <form className="userform" onSubmit={invite}>
           <Input
@@ -1591,8 +1609,8 @@ function Admin({
             </tbody>
           </table>
         </CollapsibleTable>
-      </div>}
-      {section === "catalogs" && <div className="panel">
+      </div></CompactSection>}
+      {section === "catalogs" && <CompactSection title="Catálogos configurables"><div className="panel">
         <h2>Catálogos configurables</h2>
         <p>
           Los cambios afectan las opciones de nuevos registros y quedan
@@ -1608,8 +1626,8 @@ function Admin({
           />
           <button className="primary">Agregar</button>
         </form>
-      </div>}
-      {section === "catalogs" && <div className="panel catalog">
+      </div></CompactSection>}
+      {section === "catalogs" && <CompactSection title="Elementos configurados"><div className="panel catalog">
         <div className="panelhead"><div><h2>Elementos configurados</h2><p>Edite nombres o estados y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(catalogDrafts).length || savingCatalogs} onClick={() => void saveCatalogChanges()}>{savingCatalogs ? "Guardando…" : `Guardar todos los cambios (${Object.keys(catalogDrafts).length})`}</button></div>
         <div className="catalog-category-menu" aria-label="Tipos de catálogo">{Object.entries(kinds).map(([key, label]) => <button className={kind === key ? "active" : ""} onClick={() => { setKind(key); setCatalogSearch(""); }} key={key}>{label}<span>{catalogs.filter(c => c.kind === key).length}</span></button>)}</div>
         <label className="catalog-search">Buscar en {kinds[kind].toLowerCase()}<input value={catalogSearch} onChange={event => setCatalogSearch(event.target.value)} placeholder="Escriba un nombre" /></label>
@@ -1631,8 +1649,8 @@ function Admin({
             </div>
           </div>
         ))}
-      </div>}
-      {section === "structure" && <div className="panel">
+      </div></CompactSection>}
+      {section === "structure" && <CompactSection title="Estructura organizacional cargada"><div className="panel">
         <h2>Estructura organizacional cargada</h2>
         <p>{orgUnits.length} relaciones activas de grupo, área y departamento.</p>
         <CollapsibleTable>
@@ -1641,7 +1659,7 @@ function Admin({
             <tbody>{orgUnits.map((o) => <tr key={o.id}><td>{o.group_name}</td><td>{o.area_name}</td><td>{o.department_name}</td><td>{new Date(o.created_at).toLocaleString("es-EC")}</td></tr>)}</tbody>
           </table>
         </CollapsibleTable>
-      </div>}
+      </div></CompactSection>}
     </>
   );
 }
@@ -1677,7 +1695,7 @@ function CorrectionRequests({ needs, users }: { needs: Need[]; users: Profile[] 
     }
   }
   return (
-    <div className="panel">
+    <CompactSection title="Solicitudes de corrección"><div className="panel">
       <div className="panelhead">
         <div>
           <h2>Solicitudes de corrección</h2>
@@ -1716,7 +1734,7 @@ function CorrectionRequests({ needs, users }: { needs: Need[]; users: Profile[] 
           </tbody>
         </table>
       </CollapsibleTable>
-    </div>
+    </div></CompactSection>
   );
 }
 
@@ -1869,7 +1887,7 @@ function AdminNeeds({ needs, competencyMatrix, period, reload }: { needs: Need[]
     else await reload();
   }
   return (
-    <div className="panel">
+    <CompactSection title="Temas y presupuesto"><div className="panel">
       <div className="panelhead"><div><h2>Temas y presupuesto</h2><p>Edite varios registros y guarde toda la sección. El trimestre se calcula automáticamente.</p></div><button className="primary" disabled={!Object.keys(drafts).length || savingAll} onClick={() => void saveAll()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
       {message && <div className="statusmsg">{message}</div>}
       <CollapsibleTable className="admin-needs"><table>
@@ -1890,6 +1908,6 @@ function AdminNeeds({ needs, competencyMatrix, period, reload }: { needs: Need[]
           </tr>;
         })}</tbody>
       </table></CollapsibleTable>
-    </div>
+    </div></CompactSection>
   );
 }
