@@ -57,3 +57,13 @@ La migración 20261025_logistics_partial_distribution.sql elimina el requisito d
 - Respeta el período seleccionado y las filas autorizadas por RLS. Además, aplica el alcance del perfil: departamento o área completa según `can_view_entire_area`; sin perfil no presenta filas.
 - El administrador consulta asignado, utilizado vinculado y saldo, usando los mismos cálculos de Reportes. Los usuarios conservan el acceso consultivo DNC existente; no se amplían permisos financieros.
 - Diez temas por página; sin filtros ni acciones de edición. La contracción sigue siendo exclusiva de tablas del administrador. Los valores desconocidos se distinguen de cero.
+
+### Logística según departamento seleccionado
+
+El editor de logística sigue el departamento de la ruta de distribución y el fondo actual. Al consultar un grupo o área, permite elegir un departamento dentro de ese nivel. La lista de temas, los importes editables y el total adicional corresponden exclusivamente a ese departamento y fondo. Sin departamento seleccionado no se muestran importes de otro departamento. La navegación reinicia la selección del tema; los valores de todos los departamentos se conservan en el borrador y se guardan con «Guardar todos los cambios». Los resúmenes generales por fondo y las exportaciones mantienen su alcance completo del período.
+
+### Períodos cerrados y limpieza de demostración
+
+`closed` controla el cierre administrativo, independiente de `active` (visibilidad). Cerrado o inactivo bloquea altas, modificaciones y eliminaciones de DNC, registros, lotes Excel, presupuesto por departamento, planes/revisiones presupuestarias y solicitudes de corrección. Los disparadores verifican tanto el período original como el destino y comparten bloqueo de fila con la operación de cierre. El acceso consultivo y las exportaciones permanecen disponibles según los permisos existentes. El administrador abre/cierra desde Períodos y guarda los cambios generales.
+
+La operación expresamente solicitada para los datos demo de 2026 está en `supabase/operations/purge_demo_2026.sql`: conserva el período, usuarios y auditoría; elimina los datos operativos de ese período y verifica por hash que los demás períodos permanezcan intactos. No se ejecuta como migración automática ni al ingresar al sistema.

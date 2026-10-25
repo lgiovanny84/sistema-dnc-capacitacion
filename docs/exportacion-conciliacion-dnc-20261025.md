@@ -47,8 +47,16 @@ La revisión corresponde a una instantánea de lectura, no bloquea nuevos regist
 
 ### Identificadores institucionales
 
-El DNC completo presenta el código estable `ATU-DO-001-2027` y el solicitante `LSOSA-TALENTO HUMANO`, compuesto por usuario y departamento de la solicitud. El código usa un correlativo global único (mínimo tres dígitos, sin truncarse), con el año de inicio del período. Se conserva tras modificaciones; no se reinicia ni se reutiliza al eliminar filas. Los UUID internos y relaciones presupuestarias permanecen intactos.
+El DNC completo presenta el código estable `ATU-DO-001-2027` y el solicitante `LSOSA-TALENTO HUMANO`, compuesto por usuario y departamento de la solicitud. El código usa un correlativo por período (mínimo tres dígitos, sin truncarse), con el año de inicio del período. Se conserva tras modificaciones en el mismo período y no se reutiliza al eliminar filas. Cada período inicia en 001; el año aparece al final. La migración conserva el código global anterior en `previous_dnc_code` y en auditoría. Los UUID internos y relaciones presupuestarias permanecen intactos.
 
 Los usuarios se consultan mediante la relación existente con perfiles, respetando RLS. Si el perfil no está disponible se indica expresamente, sin sustituirlo por el UUID. Las referencias de presupuestos compartidos muestran también el código institucional.
 
 El Panel ejecutivo y los reportes administrativos de temas, DNC completo y ejecución incluyen «Pendiente de asignar a temas»: presupuesto del alcance menos asignaciones a actividades, sin sumar niveles jerárquicos ni descontar logística. Sin presupuesto guardado se muestra «Por definir». Los filtros de los reportes aplican a esta tarjeta igual que al detalle.
+
+El reporte DNC completo incluye alimentación, hospedaje, movilización y total de logística presupuestada, independientemente del saldo de capacitación. Las asignaciones compartidas se contabilizan una sola vez. Se ordena por código DNC para facilitar la revisión consecutiva.
+
+Los gráficos mantienen los cálculos y filtros existentes, con paneles analíticos, ejes y cuadrícula discretos, barras agrupadas, etiquetas numéricas, leyendas y tendencia con sombreado. El detalle mensual puede consultarse por teclado o al situarse sobre cada punto. No requiere Power BI ni servicios externos.
+
+### Encabezados de tablas administrativas
+
+Las tablas permiten buscar por columna y ordenar ascendente o descendente desde el encabezado, antes de paginar. Las columnas de acciones conservan sus botones sin filtros. El componente compartido centraliza esta vista para reportes, presupuestos, configuración, matriz de competencias y registros; los usuarios de consulta no reciben controles de filtrado u ordenación. Se retiran los límites previos a la tabla para que pueda consultarse todo el alcance autorizado. Los filtros de encabezado afectan a la vista de tabla; los filtros generales del reporte determinan indicadores, gráficos y exportaciones. Las acciones de edición mantienen el identificador original de cada registro.

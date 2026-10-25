@@ -33,7 +33,7 @@ export type Need = {
   provider: string;
   observations: string;
 };
-export type PlanningPeriod = { id: string; name: string; start_date: string; end_date: string; active: boolean; created_at: string };
+export type PlanningPeriod = { closed?: boolean; id: string; name: string; start_date: string; end_date: string; active: boolean; created_at: string };
 export type Catalog = { id: string; kind: string; name: string; active: boolean };
 export type Profile = {
   id: string;
