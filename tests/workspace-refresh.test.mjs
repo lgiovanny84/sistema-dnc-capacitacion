@@ -86,5 +86,5 @@ test('administrator overview uses the selected period and carries the same autho
 
 test('user reports freeze the period selector while other user screens retain period selection',async()=>{
  const app=appHarness('user');let tree=await app.flush();let select=nodes(tree).find(n=>n.type==='select'&&n.props.value==='2027');assert.equal(select.props.disabled,false);
- const reports=nodes(tree).find(n=>n.type==='button'&&n.props['aria-label']==='Reportes');reports.props.onClick();app.render();tree=await app.flush();select=nodes(tree).find(n=>n.type==='select'&&n.props.value==='2027');assert.equal(select.props.disabled,true);assert.equal(app.find('Reports').props.role,'user');
+ const reports=nodes(tree).find(n=>n.type==='button'&&n.props['aria-label']==='Reportes');reports.props.onClick();app.render();tree=await app.flush();select=nodes(tree).find(n=>n.type==='select'&&n.props.value==='2027');assert.equal(select.props.disabled,true);assert.equal(app.find('ReportCenter').props.role,'user');
 });

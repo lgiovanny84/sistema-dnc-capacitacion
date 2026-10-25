@@ -38,7 +38,7 @@ export function GroupBudgetCards({ needs, groups, periodName }: { needs: Need[];
     <details className="group-budget-help"><summary>¿Cómo cambiar el grupo de una actividad?</summary><div><p>En <b>Administración → Competencias</b>, busque el tema y su departamento, seleccione <b>Modificar</b>, ajuste <b>Grupo ocupacional</b> y pulse <b>Guardar todos los cambios</b>. La relación activa determina el grupo mostrado en las tarjetas y los reportes de necesidades.</p><p>Si no existe una relación para esa área, departamento, factor y competencia, créela con <b>+ Nueva relación</b>, indique el grupo correcto y guarde la sección.</p><p>«Asamblea de representante» y «Asamblea de representantes» se consolidan en <b>ASAMBLEA DE REPRESENTANTES</b> para este resumen y su Excel. Los registros de origen se conservan.</p></div></details>
   </section></CompactSection>;
 }
-export function AdminOverview({ needs, groups, catalogs, competencyMatrix, orgUnits, profile, userId, period, reload }: { needs: Need[]; groups: string[]; catalogs: Catalog[]; competencyMatrix: CompetencyMatrixRow[]; orgUnits: OrgUnit[]; profile: Profile | null; userId: string; period?: PlanningPeriod; reload: () => Promise<void> }) {
+export function AdminOverview({ showGroups = true, needs, groups, catalogs, competencyMatrix, orgUnits, profile, userId, period, reload }: { showGroups?: boolean; needs: Need[]; groups: string[]; catalogs: Catalog[]; competencyMatrix: CompetencyMatrixRow[]; orgUnits: OrgUnit[]; profile: Profile | null; userId: string; period?: PlanningPeriod; reload: () => Promise<void> }) {
   const [stage, setStage] = useState("");
   const [field, setField] = useState("");
   const [search, setSearch] = useState("");
@@ -63,7 +63,7 @@ export function AdminOverview({ needs, groups, catalogs, competencyMatrix, orgUn
   }
   function close() { if (!busy && (!dirty || window.confirm("Tiene cambios sin guardar. ¿Cerrar la ventana y descartarlos?"))) { setEditing(null); setDirty(false); } }
   return <>
-    <GroupBudgetCards needs={needs} groups={groups} periodName={period?.name ?? "Sin período"} />
+    {showGroups && <GroupBudgetCards needs={needs} groups={groups} periodName={period?.name ?? "Sin período"} />}
     <CompactSection title="Actividades con datos pendientes"><section className="panel completion-panel" aria-label="Actividades con datos pendientes"><div className="panelhead"><div><h2>Actividades con datos pendientes</h2><p>Identifique qué falta y complete cada actividad desde esta pantalla.</p></div><span className={`completion-badge ${pending.length ? "planning" : "complete"}`}>{pending.length} por completar</span></div>
       <div className="completion-summary"><div><strong>{pending.length}</strong><span>Actividades por completar</span></div><div><strong>{essential}</strong><span>Con datos de levantamiento pendientes</span></div><div><strong>{planning}</strong><span>Con planificación pendiente</span></div></div>
       <p className="completion-note">Una actividad puede tener pendientes en ambas secciones. Los campos de planificación son opcionales durante el levantamiento.</p>
