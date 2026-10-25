@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {build} from 'esbuild';
+import {createRequire} from 'node:module';
+import vm from 'node:vm';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+const compiled=await build({entryPoints:[new URL('../src/UserNeedsSummary.tsx',import.meta.url).pathname],bundle:true,write:false,platform:'node',format:'cjs',jsx:'automatic',external:['react','react/jsx-runtime']});const context={module:{exports:{}},exports:{},require:createRequire(import.meta.url)};vm.runInNewContext(compiled.outputFiles[0].text,context);const {UserNeedsSummary}=context.module.exports;
+const need={id:'n',owner_id:'me',period_id:'2027',competency:'Liderazgo solicitado',area:'Administración',department:'Talento Humano',participants:3,estimated_cost:800,status:'Pendiente',planned_start_date:'2027-03-01',planned_end_date:'2027-03-02'};
+const render=(needs,extra={})=>renderToStaticMarkup(React.createElement(UserNeedsSummary,{needs,userId:'me',periodId:'2027',periodName:'2027',...extra}));
+test('user panel shows only their own requests for the selected period, without edit, filter or collapse controls',()=>{const html=render([need,{...need,id:'other',owner_id:'other',competency:'No mostrar ajeno'},{...need,id:'old',period_id:'2026',competency:'No mostrar período anterior'}]);assert.match(html,/Liderazgo solicitado/);assert.match(html,/Talento Humano/);assert.match(html,/800,00/);assert.match(html,/01\/03\/2027/);assert.doesNotMatch(html,/No mostrar|<select|Mostrar tabla|Contraer tabla|Modificar|Eliminar/);});
+test('unknown budget and real zero remain different',()=>{const html=render([{...need,estimated_cost:null},{...need,id:'zero',competency:'Sin costo',estimated_cost:0}]);assert.match(html,/Por estimar/);assert.match(html,/\$0,00/);});
+test('missing session scope is safe and empty, with guidance for registering a need',()=>{const html=render([need],{userId:''});assert.doesNotMatch(html,/Liderazgo solicitado/);assert.match(html,/Nueva necesidad/);});

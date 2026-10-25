@@ -1,3 +1,4 @@
+import { UserNeedsSummary } from "./UserNeedsSummary";
 import { ReportCenter, ExecutiveOverview, AreaBudgetOverview } from "./ReportCenter";
 import { CompactWorkspace, CompactSection } from "./CompactSection";
 import { BudgetContext, BudgetModule } from "./BudgetModule";
@@ -333,6 +334,8 @@ export default function App() {
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
           <Dashboard
+            userId={session.user.id}
+            periodId={activePeriod?.id ?? ""}
             units={orgUnits}
             needs={periodNeeds}
             totalHours={periodTotalHours}
@@ -670,9 +673,9 @@ function PlanningNote({ needs }: { needs: Need[] }) {
   const hours = needs.filter(n => n.hours == null).length;
   return costs || hours ? <p className="planning-note">Planificación pendiente: {costs} necesidades con costo por estimar y {hours} con horas por estimar. Los totales incluyen únicamente los valores registrados y pueden ser parciales.</p> : null;
 }
-function Dashboard({adminOverview,needs,totalHours,budget,role,trainingRecords,budgetAllocations,periodName,units=[]}:{adminOverview?:React.ReactNode;needs:Need[];totalHours:number;budget:number;role:Role;trainingRecords:TrainingRecord[];budgetAllocations:BudgetAllocation[];periodName:string;units?:OrgUnit[]}) {
+function Dashboard({adminOverview,needs,totalHours,budget,role,trainingRecords,budgetAllocations,periodName,units=[],userId="",periodId=""}:{userId?:string;periodId?:string;adminOverview?:React.ReactNode;needs:Need[];totalHours:number;budget:number;role:Role;trainingRecords:TrainingRecord[];budgetAllocations:BudgetAllocation[];periodName:string;units?:OrgUnit[]}) {
   if(role==='admin')return <><ExecutiveOverview needs={needs} records={trainingRecords} mappings={budgetAllocations}/><AreaBudgetOverview needs={needs} records={trainingRecords} mappings={budgetAllocations} units={units}/><div className="panel"><h2>Pendientes prioritarios</h2><p>{needs.filter(n=>n.status==='Pendiente').length} necesidades pendientes de revisión. Consulte los reportes «Datos pendientes» y «Distribución presupuestaria» para completar la planificación y distribución.</p></div></>;
-  return <><section className="cards"><Card label="Necesidades registradas" value={needs.length}/><Card label="Participaciones previstas" value={needs.reduce((s,n)=>s+Number(n.participants||0),0)}/><Card label="Banco de horas meta" value={needs.some(n=>n.hours==null)?'Por estimar':totalHours}/><Card label="Costo estimado DNC" value={needs.some(n=>n.estimated_cost==null)?'Por estimar':budget.toLocaleString('es-EC',{style:'currency',currency:'USD'})}/></section><PlanningNote needs={needs}/></>;
+  return <><section className="cards"><Card label="Necesidades registradas" value={needs.length}/><Card label="Participaciones previstas" value={needs.reduce((s,n)=>s+Number(n.participants||0),0)}/><Card label="Banco de horas meta" value={needs.some(n=>n.hours==null)?'Por estimar':totalHours}/><Card label="Costo estimado DNC" value={needs.some(n=>n.estimated_cost==null)?'Por estimar':budget.toLocaleString('es-EC',{style:'currency',currency:'USD'})}/></section><PlanningNote needs={needs}/><UserNeedsSummary needs={needs} userId={userId} periodId={periodId} periodName={periodName}/></>;
 }
 function Card({ label, value }: { label: string; value: string | number }) {
   return (
