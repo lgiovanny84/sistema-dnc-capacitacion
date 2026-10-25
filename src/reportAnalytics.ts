@@ -37,6 +37,7 @@ export function analyticsData(needs:Need[],records:TrainingRecord[],data:BudgetD
  const distributionPending=data?(distributionLevel?nodes.filter(n=>n.kind===distributionLevel).reduce((s,n)=>s+(remaining.get(n.id)||0),0):data.funds.filter(f=>!scope.fund||f.name===scope.fund).reduce((s,f)=>s+(remaining.get(f.name)||0),0)):null;
  return {amounts,remaining,distributionAssigned,distributionPending,activities,nodes,selected,classified,areaRows,unmatched:classified.filter(v=>!v.linked),execution};
 }
+const requesterLabel=(n:Need)=>`${n.requester?.username?.trim().toUpperCase()||"USUARIO NO DISPONIBLE"}-${n.department?.trim().toUpperCase()||"SIN DEPARTAMENTO"}`;
 export function makeReport(kind:ReportKind,model:ReturnType<typeof analyticsData>,data:BudgetData|null){
  const {selected,nodes,amounts,remaining,classified,areaRows,activities}=model;
  let rows:AnalyticsRow[]=[];
@@ -46,7 +47,7 @@ export function makeReport(kind:ReportKind,model:ReturnType<typeof analyticsData
    const shared=nodes.filter(v=>v.kind==='activity'&&v.need_id!==n.id&&v.name===n.competency&&v.area===n.area&&v.department===n.department&&v.group===n.occupational_group);
    const assigned=linked.reduce((s,v)=>s+(amounts.get(v.id)||0),0);
    const spent=linked.reduce((s,v)=>s+(model.execution?.used.get(v.id)||0),0);
-   return {dnc_id:n.id,owner_id:n.owner_id,...Object.fromEntries(needReportColumns.map(([key])=>[key,key==='hours'||key==='participants'||key==='estimated_cost'?n[key]??null:needReportValue(n,key)])),fund:linked.map(v=>v.fund).filter((v,i,a)=>a.indexOf(v)===i).join(' · ')||'Sin asignación directa',assigned:!data?null:linked.length?assigned/100:shared.length?null:0,spent:!data?null:linked.length?spent/100:shared.length?null:0,balance:!data?null:linked.length?(assigned-spent)/100:shared.length?null:0,financial_reference:linked.length?'Asignación directa':shared.length?`Compartido; contabilizado en DNC ${[...new Set(shared.map(v=>v.need_id))].join(', ')}`:'Sin asignación vinculada',pending_data:missingNeedFields(n).map(([,label])=>label).join('; ')||'Completo'};
+   return {dnc_id:n.dnc_code||"Por asignar",owner_id:requesterLabel(n),...Object.fromEntries(needReportColumns.map(([key])=>[key,key==='hours'||key==='participants'||key==='estimated_cost'?n[key]??null:needReportValue(n,key)])),fund:linked.map(v=>v.fund).filter((v,i,a)=>a.indexOf(v)===i).join(' · ')||'Sin asignación directa',assigned:!data?null:linked.length?assigned/100:shared.length?null:0,spent:!data?null:linked.length?spent/100:shared.length?null:0,balance:!data?null:linked.length?(assigned-spent)/100:shared.length?null:0,financial_reference:linked.length?'Asignación directa':shared.length?`Compartido; contabilizado en DNC ${[...new Set(shared.map(v=>selected.find(n=>n.id===v.need_id)?.dnc_code||'Código pendiente'))].join(', ')}`:'Sin asignación vinculada',pending_data:missingNeedFields(n).map(([,label])=>label).join('; ')||'Completo'};
   });
  }else if(kind==='topics'){
   const grouped=new Map<string,AnalyticsRow>();for(const n of selected){const key=JSON.stringify([n.area,n.department,n.occupational_group,n.competency]);const v=grouped.get(key)||{topic:n.competency,area:n.area,department:n.department,group:n.occupational_group,people:0,estimated:0,assigned:data?0:null,missing:0};v.people=Number(v.people)+Number(n.participants||0);if(n.estimated_cost==null)v.missing=Number(v.missing)+1;else v.estimated=Number(v.estimated)+Number(n.estimated_cost);grouped.set(key,v);}
@@ -59,7 +60,7 @@ export function makeReport(kind:ReportKind,model:ReturnType<typeof analyticsData
   for(const r of classified){const k=JSON.stringify([r.area,r.department,r.group]);const v=by.get(k)||{area:r.area,department:r.department,group:r.group,planned:0,fulfilled:0,unknown:0};v.fulfilled=Number(v.fulfilled)+Number(r.record.duration);by.set(k,v);}
   rows=[...by.values()].map(v=>({...v,planned:Number(v.unknown)?null:v.planned,difference:Number(v.unknown)?null:Number(v.planned)-Number(v.fulfilled)}));
  }else if(kind==='logistics')rows=nodes.filter(n=>n.kind==='activity').map(n=>({fund:n.fund,group:n.group,area:n.area,department:n.department,topic:n.name,meals:n.costs?.meals==null?null:n.costs.meals/100,lodging:n.costs?.lodging==null?null:n.costs.lodging/100,travel:n.costs?.travel==null?null:n.costs.travel/100,total:['meals','lodging','travel'].some(k=>n.costs?.[k as 'meals']==null)?null:((n.costs?.meals||0)+(n.costs?.lodging||0)+(n.costs?.travel||0))/100}));
- else rows=selected.filter(n=>missingNeedFields(n).length).map(n=>({topic:n.competency,area:n.area,department:n.department,group:n.occupational_group,owner:n.owner_id,missing:missingNeedFields(n).map(([,label])=>label).join('; ')}));
+ else rows=selected.filter(n=>missingNeedFields(n).length).map(n=>({topic:n.competency,area:n.area,department:n.department,group:n.occupational_group,owner:requesterLabel(n),missing:missingNeedFields(n).map(([,label])=>label).join('; ')}));
  return rows;
 }
 export function monthlyTrend(entries:{date:string|null|undefined;value:number}[],start?:string,end?:string){
@@ -87,4 +88,8 @@ export function reportReconciliation(model:ReturnType<typeof analyticsData>,data
   {concept:'Horas-persona planificadas DNC',value:model.selected.some(n=>n.hours==null)?null:model.selected.reduce((s,n)=>s+Number(n.hours)*Number(n.participants),0),unit:'Horas-persona'},
   {concept:'Horas-persona ejecutadas del alcance',value:model.classified.reduce((s,r)=>s+Number(r.record.duration),0),unit:'Horas-persona'}
  ];
+}
+
+export function pendingTopicAllocation(model:ReturnType<typeof analyticsData>) {
+ return model.distributionAssigned==null?null:model.distributionAssigned-model.nodes.filter(n=>n.kind==='activity').reduce((s,n)=>s+(model.amounts.get(n.id)||0),0);
 }
