@@ -90,7 +90,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
   return <form className="panel form need-form" onSubmit={submit} onInvalidCapture={event => { if ((event.target as HTMLElement).closest(".need-planning")) setPlanningOpen(true); }}>
     <div className="need-intro"><span className="eyebrow">DETECCIÓN DE NECESIDADES DE CAPACITACIÓN (DNC)</span>
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>
-      <p>Describa el problema, a quién afecta y el resultado que espera lograr.</p></div>
+      </div>
     {initialNeed && <NeedBudgetInfo needId={initialNeed.id}/>}
     <DncBudgetSignal periodId={selectedPeriodId} group={assignedGroup} area={f.area} department={f.department} topic={f.competency} estimate={f.estimated_cost} needId={initialNeed?.id}/>
     <dl className="need-context">
@@ -108,7 +108,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
         <Select label="Grupo ocupacional (sin relación activa en la matriz)" value={f.occupational_group} values={unique([...orgUnits.filter(o => norm(o.area_name) === norm(f.area) && norm(o.department_name) === norm(f.department)).map(o => o.group_name), f.occupational_group])} onChange={value => set("occupational_group", value)} />}
     </div></details>}
     <div className="need-essential">
-      <CompactSection title="Factor y competencia"><section className="need-block"><h3><span>01</span> Factor y competencia</h3><p>Elija una competencia de su departamento o proponga un tema que no aparezca en la lista.</p><div className="fields">
+      <CompactSection title="Factor y competencia"><section className="need-block"><h3><span>01</span> Factor y competencia</h3><div className="fields">
         <Select label="Factor" value={f.factor} values={factors.length ? factors : opts("factor")} onChange={value => { resetTopic(); setF(current => ({ ...current, factor: value, competency: "" })); }} required />
         <div className="topic-entry">
           <div className="topic-mode" role="group" aria-label="Forma de registrar la competencia"><button type="button" aria-pressed={!topicEntry.manual} onClick={() => chooseTopicMode(false)}>Seleccionar de la lista</button><button type="button" aria-pressed={topicEntry.manual} onClick={() => chooseTopicMode(true)}>Mi tema no aparece</button></div>
