@@ -331,6 +331,7 @@ export default function App() {
           </div>
         )}
         <CompactWorkspace enabled={role === "admin"} key={`${tab}-${activePeriod?.id}`}>
+        {activePeriod&&(activePeriod.closed||!activePeriod.active)&&<p className="alert" role="status">Período cerrado: solo consulta. Las modificaciones están bloqueadas.</p>}
         {loading ? (
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
@@ -915,12 +916,12 @@ function List({
       )}
       <MiniTable
         needs={needs}
-        onEdit={role === "admin" ? setEditing : undefined}
-        onDelete={role === "admin" ? remove : undefined}
-        onRequest={role === "user" ? setRequesting : undefined}
+        onEdit={role === "admin" && !period?.closed && period?.active!==false ? setEditing : undefined}
+        onDelete={role === "admin" && !period?.closed && period?.active!==false ? remove : undefined}
+        onRequest={role === "user" && !period?.closed && period?.active!==false ? setRequesting : undefined}
         requestUserId={userId}
       />
-      {role === "admin" && (
+      {role === "admin" && !period?.closed && period?.active!==false && (
         <div className="review">
           <h3>Revisión administrativa</h3>
           {needs
@@ -952,7 +953,7 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
   const [name, setName] = useState(String(currentYear + 1));
   const [startDate, setStartDate] = useState(`${currentYear + 1}-01-01`);
   const [endDate, setEndDate] = useState(`${currentYear + 1}-12-31`);
-  const [drafts, setDrafts] = useState<Record<string, Pick<PlanningPeriod, "name" | "start_date" | "end_date" | "active">>>({});
+  const [drafts, setDrafts] = useState<Record<string, Pick<PlanningPeriod, "name" | "start_date" | "end_date" | "active" | "closed">>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   async function createPeriod(e: FormEvent) {
@@ -963,7 +964,7 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
     setMessage(error?.message ?? "Período creado correctamente.");
     if (!error) await reload();
   }
-  const draft = (period: PlanningPeriod) => drafts[period.id] ?? { name: period.name, start_date: period.start_date, end_date: period.end_date, active: period.active };
+  const draft = (period: PlanningPeriod) => drafts[period.id] ?? { name: period.name, start_date: period.start_date, end_date: period.end_date, active: period.active, closed: !!period.closed };
   function change(period: PlanningPeriod, values: Partial<ReturnType<typeof draft>>) {
     setDrafts((all) => ({ ...all, [period.id]: { ...draft(period), ...values } }));
   }
@@ -988,10 +989,10 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
     setMessage(error?.message ?? "Período eliminado.");
     if (!error) await reload();
   }
-  return <CompactSection title="Períodos institucionales" summary={`${periods.length} períodos · ${Object.keys(drafts).length} cambios pendientes`}><div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
+  return <CompactSection title="Períodos institucionales" summary={`${periods.length} períodos · ${Object.keys(drafts).length} cambios pendientes`}><div className="panel period-manager"><div className="panelhead"><div><h2>Períodos institucionales</h2><p>Un mismo período controla levantamiento, presupuesto, ejecución y reportes. Cerrado bloquea modificaciones; Activo controla su visibilidad para usuarios.</p></div><button className="primary" disabled={!Object.keys(drafts).length || saving} onClick={() => void saveAll()}>{saving ? "Guardando…" : `Guardar todos los cambios (${Object.keys(drafts).length})`}</button></div>
     <form className="inline period-create" onSubmit={createPeriod}><label>Nombre<input value={name} onChange={(e) => setName(e.target.value)} required /></label><label>Desde<input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required /></label><label>Hasta<input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required /></label><button className="primary">Crear período</button></form>
     {message && <div className="statusmsg">{message}</div>}
-    <CollapsibleTable><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Estado</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></CollapsibleTable>
+    <CollapsibleTable><table><thead><tr><th>Nombre</th><th>Desde</th><th>Hasta</th><th>Visibilidad</th><th>Apertura</th><th>Acción</th></tr></thead><tbody>{periods.map((period) => { const value = draft(period); return <tr key={period.id}><td><input value={value.name} onChange={(e) => change(period, { name: e.target.value })} /></td><td><input type="date" value={value.start_date} onChange={(e) => change(period, { start_date: e.target.value })} /></td><td><input type="date" value={value.end_date} onChange={(e) => change(period, { end_date: e.target.value })} /></td><td><button className={value.active ? "tag" : "tag off"} onClick={() => change(period, { active: !value.active })}>{value.active ? "Activo" : "Inactivo"}</button></td><td><button type="button" className={value.closed ? "tag off" : "tag"} onClick={()=>change(period,{closed:!value.closed})}>{value.closed?"Cerrado · solo consulta":"Abierto"}</button></td><td><button className="secondary danger" onClick={() => void remove(period)}>Eliminar</button></td></tr>; })}</tbody></table></CollapsibleTable>
   </div></CompactSection>;
 }
 
@@ -1229,8 +1230,8 @@ function Admin({
       {msg && <div className="statusmsg" role="status">{msg}</div>}
       {section === "periods" && <PeriodManager periods={periods} reload={reload} />}
       {section === "matrix" && <CompetencyMatrixManager rows={competencyMatrix} reload={reload} onPendingChange={setMatrixPending} />}
-      {section === "requests" && <CorrectionRequests needs={needs} users={users} />}
-      {section === "needs" && <AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} />}
+      {section === "requests" && (period?.closed||period?.active===false?<p className="alert">Período cerrado: las solicitudes se consultan desde Necesidades.</p>:<CorrectionRequests needs={needs} users={users} />)}
+      {section === "needs" && (period?.closed||period?.active===false?<MiniTable needs={needs}/>:<AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} />)}
       {section === "users" && editingUser && (
         <AdminUserEditor
           user={editingUser}

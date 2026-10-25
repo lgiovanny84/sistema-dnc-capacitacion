@@ -85,6 +85,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     finally { setSaving(false); }
   }
 
+  if(period?.closed||period?.active===false)return <p className="alert" role="status">Período cerrado: solo consulta. No se pueden registrar ni modificar necesidades.</p>;
   return <form className="panel form need-form" onSubmit={submit} onInvalidCapture={event => { if ((event.target as HTMLElement).closest(".need-planning")) setPlanningOpen(true); }}>
     <div className="need-intro"><span className="eyebrow">DETECCIÓN DE NECESIDADES DE CAPACITACIÓN (DNC)</span>
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>

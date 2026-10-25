@@ -20,11 +20,10 @@ function harness(rows, outcomes = []) {
   render();
   return { render, button, writes, nodes: () => nodes(tree), reloads: () => reloads, state };
 }
-test('pagination exposes relations beyond the former 250-item limit without truncation', () => {
+test('the matrix provides every relation to the shared paginated table without the former 250-item limit', () => {
   const app = harness(Array.from({ length: 265 }, (_, i) => row(i)));
-  for (let page = 0; page < 13; page++) { app.button('Siguiente').props.onClick(); app.render(); }
   assert.ok(app.nodes().some(node => node.type === 'b' && node.props.children === 'Competencia 264'));
-  assert.equal(app.button('Siguiente').props.disabled, true);
+  assert.equal(app.nodes().find(n=>n.type?.name==='CollapsibleTable').props.children.props.children[1].props.children[0].length,265);
 });
 test('deletions are staged, reversible and sent only by the general save', async () => {
   const app = harness([row(1)]);
