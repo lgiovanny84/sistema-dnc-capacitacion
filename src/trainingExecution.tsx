@@ -239,7 +239,7 @@ export function BudgetSummary({ records, budgets, plans, periodName }: { records
         {!financial && <Metric label="Saldo disponible" value={costsPending ? "Pendiente de estimación" : money(assigned - used)} />}
         <Metric label="Banco de horas" value={!hoursKnown && hoursPending ? "Por estimar" : bank.toLocaleString("es-EC")} />
         <Metric label="Horas cumplidas" value={fulfilled.toLocaleString("es-EC")} />
-        <Metric label="Cumplimiento de horas" value={hoursPending ? "Pendiente de estimación" : bank ? `${Math.min(999, (fulfilled / bank) * 100).toFixed(1)}%` : "—"} />
+        <Metric label="Cumplimiento de horas" value={hoursPending ? "Pendiente de estimación" : bank ? `${((fulfilled / bank) * 100).toFixed(1)}%` : "—"} />
       </section></CompactSection>
       {!financial && (costsPending > 0 || hoursPending > 0) && <p className="planning-note">Hay {costsPending} necesidades con costo por estimar y {hoursPending} con horas por estimar. Presupuesto y banco de horas incluyen solo valores registrados; saldos y porcentajes quedan pendientes cuando faltan estimaciones.</p>}
       {financial && hoursPending > 0 && <p className="planning-note">Hay {hoursPending} necesidades con horas por estimar. El banco de horas es parcial.</p>}

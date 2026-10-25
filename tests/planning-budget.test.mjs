@@ -47,3 +47,6 @@ test('independent budgets retain executed hours from external activities without
  assert.match(html,/Horas cumplidas<\/small><strong[^>]*>2<\/strong>/);
  assert.match(html,/Gasto total del período/);
 });
+
+
+test('hour fulfillment shows the actual percentage without truncating values above 999 percent',()=>{const html=renderToStaticMarkup(React.createElement(BudgetSummary,{plans:[{...plan,estimated_cost:0,hours:1,participants:1}],records:[{...record,duration:20}],budgets:[],periodName:'2027'}));assert.match(html,/2000\.0%/);assert.doesNotMatch(html,/999\.0%/);});
