@@ -1,3 +1,4 @@
+import { dncBudget } from './budgetDnc';
 import type { Need, OrgUnit } from './needTypes';
 import type { BudgetData, BudgetNode, FundType } from './budgetModel';
 // One catalog source for each level. Existing allocations and execution links remain intact.
@@ -10,7 +11,11 @@ export function catalogChildren(data:BudgetData,parent:string,fund:FundType,unit
   const existing=data.nodes.filter(n=>n.parent===parent);
   const added=[...new Set(names)].filter(name=>!existing.some(n=>n.name===name)).sort((a,b)=>a.localeCompare(b,'es')).map(name=>{
     const linked=kind==='activity'?eligibleNeeds.filter(n=>n.competency===name):[];
-    return {id:uuid(),parent,fund,kind,name,area:kind==='area'?name:owner?.area||'',department:kind==='department'?name:kind==='activity'?owner?.name||'':'',group:kind==='group'?name:owner?.group||'',need_id:linked.sort((a,b)=>a.id.localeCompare(b.id))[0]?.id||null,mode:'percent',value:0,people:0,gap:0,criticality:0,risk:0,impact:0} as BudgetNode;
+    const node={id:uuid(),parent,fund,kind,name,area:kind==='area'?name:owner?.area||'',department:kind==='department'?name:kind==='activity'?owner?.name||'':'',group:kind==='group'?name:owner?.group||'',need_id:linked.sort((a,b)=>a.id.localeCompare(b.id))[0]?.id||null,mode:'percent',value:0,people:0,gap:0,criticality:0,risk:0,impact:0} as BudgetNode;
+    if(kind==='activity'&&fund==='Institucional'&&!data.nodes.some(n=>n.kind==='activity'&&n.fund!==fund&&n.value>0&&n.group===node.group&&n.area===node.area&&n.department===node.department&&(n.name===node.name||needs.find(v=>v.id===n.need_id)?.competency===node.name))){
+      const proposal=dncBudget(node,needs);if(proposal.cents!=null){node.mode='amount';node.value=proposal.cents;}
+    }
+    return node;
   });
   return reconcileDncTopics({...data,nodes:[...data.nodes,...added]},needs);
 }

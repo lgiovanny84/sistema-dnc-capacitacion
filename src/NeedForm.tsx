@@ -1,3 +1,4 @@
+import { DncBudgetSignal } from "./DncBudgetSignal";
 import { NeedBudgetInfo } from "./BudgetModule";
 import { CompactSection } from "./CompactSection";
 import { useEffect, useState } from "react";
@@ -91,6 +92,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>
       <p>Describa el problema, a quién afecta y el resultado que espera lograr.</p></div>
     {initialNeed && <NeedBudgetInfo needId={initialNeed.id}/>}
+    <DncBudgetSignal periodId={selectedPeriodId} group={assignedGroup} area={f.area} department={f.department} topic={f.competency} estimate={f.estimated_cost} needId={initialNeed?.id}/>
     <dl className="need-context">
       <div><dt>Período</dt><dd>{period?.name ?? "Sin período"}</dd></div>
       <div><dt>Departamento</dt><dd>{f.department || "Sin asignar"}</dd></div>
