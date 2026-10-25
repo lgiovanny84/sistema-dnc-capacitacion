@@ -1,13 +1,12 @@
-import { reportNeeds } from "./reportFilters";
+import { ReportCenter, ExecutiveOverview, AreaBudgetOverview } from "./ReportCenter";
 import { CompactWorkspace, CompactSection } from "./CompactSection";
-import { BudgetContext, BudgetModule, BudgetFinancialSummary, exportBudget } from "./BudgetModule";
+import { BudgetContext, BudgetModule } from "./BudgetModule";
 import type { BudgetState } from "./budgetModel";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { configured, supabase } from "./supabase";
 import {
   BudgetAllocation,
-  BudgetSummary,
   ImportBatch,
   TrainingExecutionModule,
   TrainingRecord,
@@ -19,10 +18,9 @@ import { NeedForm } from "./NeedForm";
 import { Modal } from "./Modal";
 import { AdminOverview } from "./AdminOverview";
 import { fetchAllReportRows } from "./reportData";
-import { buildNeedsWorkbook, downloadInstitutionalWorkbook, institutionalLogo, reportFilename } from "./institutionalExcel";
 import type { Role, Need, PlanningPeriod, Catalog, Profile, OrgUnit } from "./needTypes";
 import { competencyGroup, needWithCompetencyGroup } from "./competencyAssignment";
-import { needReportColumns, needReportValue, validatePlanning, planningValues } from "./needPlanning";
+import { validatePlanning, planningValues } from "./needPlanning";
 type CorrectionRequest = {
   id: string;
   need_id: string;
@@ -59,7 +57,6 @@ const fallback: Catalog[] = [
   { id: "m2", kind: "modality", name: "Virtual", active: true },
   { id: "m3", kind: "modality", name: "Híbrida", active: true },
 ];
-const esc = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
 const pageMeta: Record<string, { title: string; description: string }> = {
   dashboard: { title: "Panel ejecutivo", description: "Visión consolidada de necesidades, presupuesto y avance del período." },
   new: { title: "Detección de Necesidades de Capacitación (DNC)", description: "Registro estructurado de brechas, competencias y resultados esperados." },
@@ -112,15 +109,7 @@ export default function App() {
     [notice, setNotice] = useState(""),
     [configurationPending, setConfigurationPending] = useState(0),
     [accessBlocked, setAccessBlocked] = useState(false),
-    [recovery, setRecovery] = useState(false),
-    [filters, setFilters] = useState({
-      type: "",
-      factor: "",
-      status: "",
-      area: "",
-      department: "",
-      occupational_group: "",
-    });
+    [recovery, setRecovery] = useState(false);
   const authUserId = useRef<string | null>(null);
   const loadVersion = useRef(0);
   useEffect(() => {
@@ -263,44 +252,12 @@ export default function App() {
   const periodBatches = activePeriod ? importBatches.filter((batch) => batch.period_id === activePeriod.id) : [];
   const financialBudget = financialBudgets.find(b => b.period_id === activePeriod?.id) ?? null;
   const periodBudgets = activePeriod ? budgetAllocations.filter((allocation) => allocation.period_id === activePeriod.id) : [];
-  const visible = reportNeeds(periodNeeds, filters, role);
-  const totalHours = visible.reduce(
-      (s, n) => s + Number(n.hours) * Number(n.participants),
-      0,
-    ),
-    budget = visible.reduce((s, n) => s + Number(n.estimated_cost), 0),
-    periodTotalHours = periodNeeds.reduce((s, n) => s + Number(n.hours) * Number(n.participants), 0),
-    periodBudget = periodNeeds.reduce((s, n) => s + Number(n.estimated_cost), 0);
-  const options = (kind: string) => {
-    if (kind === "area") return unique(orgUnits.map((o) => o.area_name));
-    if (kind === "factor") {
-      const matrixFactors = unique(competencyMatrix.filter((row) => row.active).map((row) => row.factor));
-      return matrixFactors.length ? matrixFactors : catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
-    }
-    if (kind === "occupational_group" || kind === "department")
-      return unique(periodNeeds.filter(n => !filters.area || n.area === filters.area).filter(n => kind === "department" || !filters.department || n.department === filters.department).map(n => n[kind]));
-    return catalogs.filter((c) => c.kind === kind && c.active).map((c) => c.name);
-  };
+  const visible = periodNeeds;
+  const periodTotalHours = periodNeeds.reduce((sum,n)=>sum+Number(n.hours)*Number(n.participants),0);
+  const periodBudget = periodNeeds.reduce((sum,n)=>sum+Number(n.estimated_cost),0);
   function navigate(next: string) {
     if (next !== tab && configurationPending && !window.confirm("Tiene cambios de configuración sin guardar. ¿Salir y descartarlos?")) return;
     setTab(next);
-  }
-  function exportCSV() {
-    const csv =
-      "\ufeff" +
-      [esc("Período"), ...needReportColumns.map(([, label]) => esc(label))].join(";") +
-      "\n" +
-      visible
-        .map((n) => [esc(activePeriod?.name ?? ""), ...needReportColumns.map(([key]) => esc(needReportValue(n, key)))].join(";"))
-        .join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-    );
-    const periodLabel = (activePeriod?.name ?? "sin-periodo").replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ]+/g, "-").replace(/^-|-$/g, "");
-    a.download = `reporte-dnc-${periodLabel}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
   }
   return (
     <BudgetContext.Provider value={role === "admin" ? financialBudget : null}><div className={`shell ${menuCollapsed ? "collapsed" : ""}`}>
@@ -376,6 +333,7 @@ export default function App() {
           <p>Cargando…</p>
         ) : tab === "dashboard" ? (
           <Dashboard
+            units={orgUnits}
             needs={periodNeeds}
             totalHours={periodTotalHours}
             budget={periodBudget}
@@ -412,17 +370,9 @@ export default function App() {
             period={activePeriod}
           />
         ) : tab === "reports" ? (
-          <Reports
-            role={role}
-            needs={visible}
-            period={activePeriod}
-            filters={filters}
-            setFilters={setFilters}
-            options={options}
-            totalHours={totalHours}
-            budget={budget}
-            exportCSV={exportCSV}
-          />
+          <ReportCenter role={role} period={activePeriod} needs={periodNeeds} records={periodRecords} mappings={periodBudgets} units={orgUnits}
+            pendingEditor={selected => <AdminOverview showGroups={false} needs={selected} groups={[]} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={session.user.id} period={activePeriod} reload={load}/>}/>
+
         ) : tab === "execution" && role === "admin" ? (
           activePeriod ? <TrainingExecutionModule
               records={periodRecords}
@@ -438,7 +388,7 @@ export default function App() {
         ) : tab === "admin" && role === "admin" ? (
           <Admin onPendingChange={setConfigurationPending} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} needs={periodNeeds} periods={periods} period={activePeriod} currentUserId={session.user.id} reload={load} />
         ) : <div className="alert">No tiene acceso a esta sección.</div>}
-        {tab === "reports" && role === "admin" && financialBudget && activePeriod && <CompactSection title="Reporte de presupuestos independientes" summary="Distribución y ejecución del período completo"><div className="panel"><p>Este reporte utiliza el período completo; los filtros de necesidades se aplican únicamente al reporte de necesidades.</p><button className="secondary" onClick={()=>void exportBudget(financialBudget.payload,periodRecords,periodBudgets,activePeriod,periodNeeds).catch(()=>setNotice("No se pudo generar el reporte de presupuestos."))}>Exportar distribución y ejecución a Excel</button><BudgetFinancialSummary data={financialBudget.payload} records={periodRecords} mappings={periodBudgets} periodName={activePeriod.name}/></div></CompactSection>}
+
         </CompactWorkspace>
         <footer>
           Información de uso interno · Acceso y modificaciones sujetos a
@@ -720,80 +670,9 @@ function PlanningNote({ needs }: { needs: Need[] }) {
   const hours = needs.filter(n => n.hours == null).length;
   return costs || hours ? <p className="planning-note">Planificación pendiente: {costs} necesidades con costo por estimar y {hours} con horas por estimar. Los totales incluyen únicamente los valores registrados y pueden ser parciales.</p> : null;
 }
-function Dashboard({
-  adminOverview,
-  needs,
-  totalHours,
-  budget,
-  role,
-  trainingRecords,
-  budgetAllocations,
-  periodName,
-}: {
-  adminOverview?: React.ReactNode;
-  needs: Need[];
-  totalHours: number;
-  budget: number;
-  role: Role;
-  trainingRecords: TrainingRecord[];
-  budgetAllocations: BudgetAllocation[];
-  periodName: string;
-}) {
-  return (
-    <>
-      <CompactSection title="Indicadores del período"><section className="cards">
-        <Card label="Necesidades registradas" value={needs.length} />
-        <Card
-          label="Pendientes de revisión"
-          value={needs.filter((n) => n.status === "Pendiente").length}
-        />
-        <Card label="Banco de horas meta" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
-        <Card
-          label="Presupuesto estimado"
-          value={needs.length && needs.every(n => n.estimated_cost == null) ? "Por estimar" : budget.toLocaleString("es-EC", {
-            style: "currency",
-            currency: "USD",
-          })}
-        />
-      </section></CompactSection>
-      {role !== "admin" && <PlanningNote needs={needs} />}
-      {role === "admin" && adminOverview}
-      {role === "admin" && (
-        <BudgetSummary records={trainingRecords} budgets={budgetAllocations} plans={needs} periodName={periodName} />
-      )}
-      <section className="grid2">
-        <CompactSection title="Distribución por factor"><div className="panel">
-          <h2>Distribución por factor</h2>
-          <Bars needs={needs} field="factor" />
-        </div></CompactSection>
-        <CompactSection title="Alertas de gestión"><div className="panel">
-          <h2>Alertas de gestión</h2>
-          <div className="callout">
-            <b>
-              {
-                needs.filter((n) => n.factor === "Cumplimiento normativo")
-                  .length
-              }
-            </b>
-            <span>necesidades de cumplimiento normativo</span>
-          </div>
-          <div className="callout">
-            <b>
-              {
-                needs.filter((n) => ["Crítica", "Alta"].includes(n.priority))
-                  .length
-              }
-            </b>
-            <span>necesidades de prioridad alta o crítica</span>
-          </div>
-        </div></CompactSection>
-      </section>
-      <CompactSection title="Últimos registros"><div className="panel">
-        <h2>Últimos registros</h2>
-        <MiniTable needs={needs.slice(0, 6)} />
-      </div></CompactSection>
-    </>
-  );
+function Dashboard({adminOverview,needs,totalHours,budget,role,trainingRecords,budgetAllocations,periodName,units=[]}:{adminOverview?:React.ReactNode;needs:Need[];totalHours:number;budget:number;role:Role;trainingRecords:TrainingRecord[];budgetAllocations:BudgetAllocation[];periodName:string;units?:OrgUnit[]}) {
+  if(role==='admin')return <><ExecutiveOverview needs={needs} records={trainingRecords} mappings={budgetAllocations}/><AreaBudgetOverview needs={needs} records={trainingRecords} mappings={budgetAllocations} units={units}/><div className="panel"><h2>Pendientes prioritarios</h2><p>{needs.filter(n=>n.status==='Pendiente').length} necesidades pendientes de revisión. Consulte los reportes «Datos pendientes» y «Distribución presupuestaria» para completar la planificación y distribución.</p></div></>;
+  return <><section className="cards"><Card label="Necesidades registradas" value={needs.length}/><Card label="Participaciones previstas" value={needs.reduce((s,n)=>s+Number(n.participants||0),0)}/><Card label="Banco de horas meta" value={needs.some(n=>n.hours==null)?'Por estimar':totalHours}/><Card label="Costo estimado DNC" value={needs.some(n=>n.estimated_cost==null)?'Por estimar':budget.toLocaleString('es-EC',{style:'currency',currency:'USD'})}/></section><PlanningNote needs={needs}/></>;
 }
 function Card({ label, value }: { label: string; value: string | number }) {
   return (
@@ -1060,135 +939,6 @@ function List({
         </div>
       )}
     </div></CompactSection>
-  );
-}
-function Reports({
-  role = "user",
-  period,
-  needs,
-  filters,
-  setFilters,
-  options,
-  totalHours,
-  budget,
-  exportCSV,
-}: {
-  role?: Role;
-  period?: PlanningPeriod;
-  needs: Need[];
-  filters: Record<string, string>;
-  setFilters: (x: any) => void;
-  options: (k: string) => string[];
-  totalHours: number;
-  budget: number;
-  exportCSV: () => void;
-}) {
-  const [exporting, setExporting] = useState(false), [exportError, setExportError] = useState("");
-  async function exportExcel() {
-    if (exporting) return;
-    setExporting(true); setExportError("");
-    try {
-      const labels: Record<string, string> = { type: "Tipo", factor: "Factor", status: "Estado", area: "Área", department: "Departamento", occupational_group: "Grupo ocupacional" };
-      const applied = role === "admin" ? Object.entries(filters).filter(([, value]) => value).map(([key, value]) => `${labels[key] ?? key}: ${value}`).join(". ") : "Consulta del período y alcance autorizado";
-      const book = await buildNeedsWorkbook(needs, period ?? { name: "Sin período" }, applied, await institutionalLogo());
-      await downloadInstitutionalWorkbook(book, reportFilename("reporte_necesidades", period?.name ?? "sin-periodo"));
-    } catch { setExportError("No se pudo exportar el reporte. Intente nuevamente."); }
-    finally { setExporting(false); }
-  }
-  const set = (k: string, v: string) => {
-    if (role !== "admin") return;
-    setFilters((x: any) => ({ ...x, [k]: v, ...(k === "area" ? { department: "", occupational_group: "" } : k === "department" ? { occupational_group: "" } : {}) }));
-  };
-  return (
-    <>
-      <div className="report-heading">
-        <img className="report-logo" src="/logo-atuntaqui-horizontal.png" alt="Cooperativa Atuntaqui" />
-        <div>
-          <h2>Reporte de necesidades de capacitación</h2>
-          <small>Generado: {new Date().toLocaleString("es-EC")}</small>
-        </div>
-      </div>
-      {role === "admin" ? <CompactSection title="Filtros de búsqueda"><div className="panel filters">
-        <Select
-          label="Tipo"
-          value={filters.type}
-          values={["Interna", "Externa"]}
-          onChange={(v) => set("type", v)}
-        />
-        <Select
-          label="Factor"
-          value={filters.factor}
-          values={options("factor")}
-          onChange={(v) => set("factor", v)}
-        />
-        <Select
-          label="Área"
-          value={filters.area}
-          values={options("area")}
-          onChange={(v) => set("area", v)}
-        />
-        <Select label="Departamento" value={filters.department} values={options("department")} onChange={v => set("department", v)} />
-        <Select label="Grupo ocupacional" value={filters.occupational_group} values={options("occupational_group")} onChange={v => set("occupational_group", v)} />
-        <Select
-          label="Estado"
-          value={filters.status}
-          values={[
-            "Pendiente",
-            "Aprobada",
-            "Observada",
-            "Planificada",
-            "Ejecutada",
-            "Cerrada",
-          ]}
-          onChange={(v) => set("status", v)}
-        />
-        <button
-          className="secondary"
-          onClick={() =>
-            setFilters({ type: "", factor: "", status: "", area: "", department: "", occupational_group: "" })
-          }
-        >
-          Limpiar
-        </button>
-      </div></CompactSection> : <p className="planning-note">Consulta del período seleccionado y de la información autorizada para su usuario. Los filtros son exclusivos del administrador.</p>}
-      <CompactSection title="Indicadores del período"><section className="cards">
-        <Card label={role === "admin" ? "Registros filtrados" : "Registros del período"} value={needs.length} />
-        <Card label="Horas-persona" value={needs.length && needs.every(n => n.hours == null) ? "Por estimar" : totalHours} />
-        <Card
-          label="Presupuesto"
-          value={needs.length && needs.every(n => n.estimated_cost == null) ? "Por estimar" : budget.toLocaleString("es-EC", {
-            style: "currency",
-            currency: "USD",
-          })}
-        />
-      </section></CompactSection>
-      <PlanningNote needs={needs} />
-      <section className="grid2">
-        <CompactSection title="Por área"><div className="panel">
-          <h2>Por área</h2>
-          <Bars needs={needs} field="area" />
-        </div></CompactSection>
-        <CompactSection title="Por prioridad"><div className="panel">
-          <h2>Por prioridad</h2>
-          <Bars needs={needs} field="priority" />
-        </div></CompactSection>
-      </section>
-      <CompactSection title="Por grupo ocupacional"><div className="panel"><h2>Por grupo ocupacional</h2><Bars needs={needs} field="occupational_group" /></div></CompactSection>
-      <CompactSection title="Detalle para toma de decisiones"><div className="panel">
-        <div className="panelhead">
-          <h2>Detalle para toma de decisiones</h2>
-          <div>
-            <button className="secondary" onClick={() => window.print()}>
-              Imprimir / PDF
-            </button>{" "}
-            <button className="primary" disabled={exporting} onClick={() => void exportExcel()}>{exporting ? "Generando Excel…" : "Exportar Excel institucional"}</button>{" "}
-            <button className="secondary" onClick={exportCSV}>Exportar CSV</button>
-          </div>
-        </div>
-        {exportError && <div className="error" role="alert">{exportError}</div>}
-        <MiniTable needs={needs} />
-      </div></CompactSection>
-    </>
   );
 }
 function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload: () => Promise<void> }) {
