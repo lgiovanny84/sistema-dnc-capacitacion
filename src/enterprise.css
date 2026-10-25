@@ -294,3 +294,5 @@ button.secondary:hover:not(:disabled), .secondary:hover:not(:disabled) { backgro
 @media(max-width:480px){.report-kpis{grid-template-columns:1fr}.report-kpis strong{font-size:22px}}
 @media print{.report-center .filters,.report-center .actions,.compact-controls{display:none!important}.report-chart{break-inside:avoid}}
 .report-center .numeric-cell,.area-budget-overview td:not(:first-child),.area-budget-overview th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+.user-requested-topics td{vertical-align:top;overflow-wrap:anywhere;max-width:380px}
+.user-requested-topics .numeric-cell{text-align:right;font-variant-numeric:tabular-nums}
