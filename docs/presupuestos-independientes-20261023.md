@@ -8,10 +8,10 @@
 4. Cada nivel permite distribuir a todos sus elementos en una operación. La ruta superior permite regresar sin perder el borrador.
 5. Los temas se cargan únicamente de las necesidades DNC del período, filtradas por grupo, área y departamento. No se ofrecen temas de la matriz sin selección DNC ni creación de temas externos en Presupuestos.
 6. Completar la distribución del presupuesto de capacitación hasta los temas. El dinero aún sin distribuir se muestra en cada nivel. Se puede guardar un avance incompleto.
-7. Solo después se habilita Generar presupuesto adicional de logística. Registrar alimentación, hospedajes y movilización por tema. Sus sumas generan el presupuesto adicional por fondo.
+7. Al contar con temas DNC vinculados se habilita Generar presupuesto adicional de logística, incluso con distribución parcial en otros fondos. Registrar alimentación, hospedajes y movilización por tema. Sus sumas generan el presupuesto adicional por fondo.
 8. Guardar todos los cambios confirma una revisión completa. La exportación utiliza datos guardados y conserva el formato institucional.
 
-Los campos logísticos vacíos permanecen por definir; cero significa que no existe ese gasto. Los totales conocidos son parciales mientras falten campos. La inversión total final queda pendiente hasta completar ese desglose. Cambiar la distribución de capacitación requiere volver a generar la etapa logística; conserva los importes digitados.
+Los campos logísticos vacíos permanecen por definir; cero significa que no existe ese gasto. Los totales conocidos son parciales mientras falten campos. La inversión total final queda pendiente hasta completar ese desglose. Cambiar la distribución de capacitación conserva abierta la etapa logística y los importes digitados.
 
 ## Cálculos
 
@@ -33,7 +33,7 @@ Las tarjetas por grupo ocupacional utilizan la asignación directa al grupo, con
 
 ## Datos, seguridad y compatibilidad
 
-training_budget_plans conserva un documento por período (fondos, nodos, vínculos y estado de generación logística). training_budget_revisions guarda autor, fecha y revisión. save_training_budget valida grupo/área/departamento, jerarquía, porcentajes, fondos, relaciones, desglose, finalización de capacitación antes de generar logística y revisión esperada. Una transacción con bloqueo del período evita guardados parciales y sobrescrituras concurrentes.
+training_budget_plans conserva un documento por período (fondos, nodos, vínculos y estado de generación logística). training_budget_revisions guarda autor, fecha y revisión. save_training_budget valida grupo/área/departamento, jerarquía, porcentajes, fondos, relaciones, desglose, existencia de temas DNC antes de registrar logística y revisión esperada. Una transacción con bloqueo del período evita guardados parciales y sobrescrituras concurrentes.
 
 RLS restringe el acceso al administrador activo, no eliminado y con cambio de clave inicial completado. No se permite escritura directa del cliente a tablas; el guardado pasa por la RPC. Se conservan permisos de usuarios y datos históricos. Las tablas del administrador pueden contraerse; la lista principal se muestra abierta para facilitar la distribución. El usuario común no dispone de controles de contracción.
 
@@ -46,3 +46,14 @@ Pruebas de catálogo: todos los grupos, deduplicación, áreas/departamentos dep
 ## Temas exclusivamente desde DNC
 
 La migración 20261024_budget_topics_from_dnc.sql exige vínculo a una necesidad del mismo período, área y departamento cuyo tema coincida. El cliente deduplica temas repetidos y vincula una DNC representativa de forma determinista. Los cambios de nombre de una DNC vinculada se reflejan al cargar la pantalla. Las asignaciones cuyo origen ya no exista se conservan para revisión, fuera de la lista de temas disponibles: no se borran importes automáticamente y no se permite guardarlas sin retirarlas o corregir primero la DNC. El retiro explícito conserva registros ejecutados e historial y deja la asignación por redistribuir.
+
+## Corrección de habilitación de logística
+
+La migración 20261025_logistics_partial_distribution.sql elimina el requisito de distribuir el 100 % de todos los fondos. La logística sigue siendo presupuesto adicional por tema DNC, con controles de importes no negativos y pertenencia al período/departamento. No permite generar logística sin un tema DNC vinculado. Cambiar la distribución de otras áreas no oculta ni borra los gastos logísticos. No modifica montos guardados.
+
+### Matriz consolidada en el Panel ejecutivo
+
+- Resume temas por grupo ocupacional, área y departamento, con participaciones previstas y costo estimado DNC.
+- Respeta el período seleccionado y las filas autorizadas por RLS. Además, aplica el alcance del perfil: departamento o área completa según `can_view_entire_area`; sin perfil no presenta filas.
+- El administrador consulta asignado, utilizado vinculado y saldo, usando los mismos cálculos de Reportes. Los usuarios conservan el acceso consultivo DNC existente; no se amplían permisos financieros.
+- Diez temas por página; sin filtros ni acciones de edición. La contracción sigue siendo exclusiva de tablas del administrador. Los valores desconocidos se distinguen de cero.

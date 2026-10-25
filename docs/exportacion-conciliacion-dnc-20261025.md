@@ -44,3 +44,11 @@ La revisión corresponde a una instantánea de lectura, no bloquea nuevos regist
 - Comparativo por proveedor de gasto, horas y registros ejecutados.
 - Barras apiladas de completitud por departamento, con registros completos y pendientes.
 - Tendencia de gasto acumulado por mes frente al presupuesto del período, sin suponer un calendario mensual de desembolsos que no exista.
+
+### Identificadores institucionales
+
+El DNC completo presenta el código estable `ATU-DO-001-2027` y el solicitante `LSOSA-TALENTO HUMANO`, compuesto por usuario y departamento de la solicitud. El código usa un correlativo global único (mínimo tres dígitos, sin truncarse), con el año de inicio del período. Se conserva tras modificaciones; no se reinicia ni se reutiliza al eliminar filas. Los UUID internos y relaciones presupuestarias permanecen intactos.
+
+Los usuarios se consultan mediante la relación existente con perfiles, respetando RLS. Si el perfil no está disponible se indica expresamente, sin sustituirlo por el UUID. Las referencias de presupuestos compartidos muestran también el código institucional.
+
+El Panel ejecutivo y los reportes administrativos de temas, DNC completo y ejecución incluyen «Pendiente de asignar a temas»: presupuesto del alcance menos asignaciones a actividades, sin sumar niveles jerárquicos ni descontar logística. Sin presupuesto guardado se muestra «Por definir». Los filtros de los reportes aplican a esta tarjeta igual que al detalle.

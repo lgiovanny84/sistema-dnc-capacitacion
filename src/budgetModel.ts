@@ -89,3 +89,7 @@ export function trainingDistributed(data:BudgetData) {
 export function distributeEqually(nodes:BudgetNode[],cents:number) {
   const shares=apportion(cents,nodes.map(()=>1));return nodes.map((n,i)=>({...n,mode:'amount' as const,value:shares[i]}));
 }
+
+export function canBudgetLogistics(data:BudgetData) {
+ return !calculateBudget(data).errors.length && data.nodes.some(n=>n.kind==='activity');
+}

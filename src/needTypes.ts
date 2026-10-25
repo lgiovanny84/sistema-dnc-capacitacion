@@ -1,5 +1,7 @@
 export type Role = "admin" | "user";
 export type Need = {
+  dnc_code?: string;
+  requester?: { username: string } | null;
   id: string;
   period_id: string | null;
   created_at: string;

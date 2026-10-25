@@ -39,6 +39,7 @@ before(async()=>{
  await db.exec(readFileSync(new URL('../supabase/migrations/20261024_budget_organizational_hierarchy.sql',import.meta.url),'utf8'));
  await db.exec(readFileSync(new URL('../supabase/migrations/20261024_budget_groups_and_logistics.sql',import.meta.url),'utf8'));
  await db.exec(readFileSync(new URL('../supabase/migrations/20261024_budget_topics_from_dnc.sql',import.meta.url),'utf8'));
+ await db.exec(readFileSync(new URL('../supabase/migrations/20261025_logistics_partial_distribution.sql',import.meta.url),'utf8'));
 });
 after(()=>db.close());
 async function caller(id){await db.exec('reset role');await db.query("select set_config('app.uid',$1,false)",[id]);await db.exec('set role authenticated');}
@@ -58,7 +59,8 @@ test('database atomically saves independent funds, audits revisions and prevents
  await db.exec('begin');
  d=fixture();d.funds[1].cents=0;d.nodes[0].value=10000;d.logistics_generated=true;d.nodes[1].costs={meals:8000000,lodging:50000,travel:40000};
  await save(1,d);assert.equal((await db.query('select revision from training_budget_plans')).rows[0].revision,2);
- d.nodes[0].value=5000;await assert.rejects(save(2,d),/Complete la distribución/);
+ d.nodes[0].value=5000;await save(2,d);assert.equal((await db.query('select revision from training_budget_plans')).rows[0].revision,3);
+ d.nodes=d.nodes.filter(n=>n.kind!=='activity');await assert.rejects(save(3,d),/tema DNC/);
  await db.exec('rollback');
  assert.equal((await db.query('select revision from training_budget_plans')).rows[0].revision,1);
 });
