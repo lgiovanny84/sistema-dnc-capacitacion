@@ -342,12 +342,9 @@ button.secondary:hover:not(:disabled), .secondary:hover:not(:disabled) { backgro
 .table-view-status button,.table-pagination button{font-size:12px;min-height:32px;padding:5px 10px}
 @media print{.column-filter,.column-sort>span:last-child,.table-view-status,.table-pagination{display:none!important}.column-control{display:block;min-width:0}.column-sort{padding:0}.table th{position:static}}
 .report-kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-.dnc-budget-signal{border:1px solid #c8d9e7;background:#f4f8fc;border-radius:10px;padding:16px;margin:16px 0;grid-column:1/-1}
-.dnc-budget-signal h3{font-size:14px;margin:0 0 10px;color:#203b56}
-.dnc-budget-signal p{font-size:12px;line-height:1.6;margin:8px 0}
+.dnc-budget-signal{border:1px solid #c8d9e7;background:#f4f8fc;border-radius:10px;padding:10px 12px;margin:10px 0;grid-column:1/-1}
+.dnc-budget-signal p{font-size:12px;line-height:1.5;margin:4px 0}
 .dnc-budget-signal.has-difference{border-color:#d9a3a3;background:#fff7f7}
 .dnc-budget-signal.has-difference [role=status]{color:#9b2020}
-.budget-signal-tags{display:flex;gap:8px;flex-wrap:wrap}
-.budget-signal-help{color:#52677d}
 .budget-review-ack{display:flex!important;align-items:flex-start;gap:10px;font-size:12px!important;line-height:1.6;color:#792323}
 .budget-review-ack input{width:16px!important;height:16px;min-height:16px!important;flex-shrink:0;margin:2px 0 0!important}
