@@ -1,4 +1,4 @@
-import type { Workbook } from "exceljs";
+import ExcelJS, { type Workbook } from "exceljs";
 import type { Need } from "./needTypes";
 import { needReportColumns } from "./needPlanning";
 import { missingNeedFields } from "./needReview";
@@ -17,7 +17,6 @@ function excelDate(value: unknown, withTime: boolean): Date | string {
   return new Date(parts.replace(" ", "T") + "Z");
 }
 export async function buildInstitutionalWorkbook(options: ReportOptions): Promise<Workbook> {
-  const ExcelJS = (await import("exceljs")).default;
   const book = new ExcelJS.Workbook();
   const generated = options.generatedAt ?? new Date();
   book.creator = "Cooperativa de Ahorro y Crédito Atuntaqui Ltda.";
@@ -129,8 +128,10 @@ export function reportFilename(prefix: string, periodName: string) {
 export async function downloadInstitutionalWorkbook(book: Workbook, filename: string) {
   const buffer = await book.xlsx.writeBuffer();
   const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-  const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const anchor = document.createElement("a");
+  anchor.href = url; anchor.download = filename; anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  try { anchor.click(); } finally { anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000); }
 }
 export async function buildNeedsWorkbook(needs: Need[], period: { name: string; start_date?: string; end_date?: string }, filters: string, logoBase64?: string) {
   const costsPending = needs.filter(need => need.estimated_cost == null).length;
