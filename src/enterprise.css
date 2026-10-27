@@ -35,7 +35,7 @@
   --shadow-md: 0 8px 24px rgba(21, 43, 67, .08);
   --shadow-lg: 0 24px 64px rgba(21, 43, 67, .18);
   --motion: 160ms cubic-bezier(.2, .8, .2, 1);
-  font-family: Inter, "Segoe UI", Aptos, "DejaVu Sans", system-ui, sans-serif;
+  font-family: "Acto", "Aptos", "Segoe UI", Arial, sans-serif;
 }
 body { background: var(--canvas); font-size: 14px; line-height: 1.6; }
 footer { color: var(--ink-600); font-size: 11px; line-height: 1.6; letter-spacing: .04em; }
@@ -355,3 +355,21 @@ button.secondary:hover:not(:disabled), .secondary:hover:not(:disabled) { backgro
 .section-editor:not(.is-editing) select{background-color:#f8fafc}
 .organization-manager td input{min-width:210px;width:100%}
 .section-editor{min-width:0}
+
+/* Atuntaqui institutional identity: brand manual §§3.5, 3.7. */
+:root{--brand-950:#252c57;--brand-900:#252c57;--brand-800:#252c57;--brand-700:#252c57;--brand-600:#343e72;--brand-green:#009f4d;--brand-orange:#ff6a13;--canvas:#f5f6f9;--ink-950:#252c57;--ink-800:#353c59;--ink-600:#566077;--focus:#252c57;--line:#e0e3eb;--radius-md:10px}
+body,button,input,select,textarea{font-family:"Acto","Aptos","Segoe UI",Arial,sans-serif}
+h1,h2,h3{color:#252c57;font-family:"Acto","Aptos","Segoe UI",Arial,sans-serif}
+aside{background:#252c57}aside nav button.active{background:#3b436d;box-shadow:inset 3px 0 #ff6a13}aside nav button:hover{background:#343c65}
+header{background:#fff;border-bottom:1px solid #e0e3eb}header::after{display:none}.secure{color:#17613d;background:#edf7f1}
+.panel,.card,.group-budget-card{background:#fff;border:1px solid #e0e3eb;box-shadow:0 2px 8px #252c5706}
+.card::before{background:#009f4d;width:3px}.card strong,.group-budget-value strong{color:#252c57}.panelhead{border-bottom-color:#e0e3eb}
+button.primary,.primary{background:#252c57;border-color:#252c57}button.primary:hover:not(:disabled),.primary:hover:not(:disabled){background:#343e72;border-color:#343e72}
+button.secondary,.secondary{border-color:#a4aabb;color:#252c57}button.secondary:hover:not(:disabled),.secondary:hover:not(:disabled){background:#f1f3f8;border-color:#252c57}
+.admin-section-menu button.active,.catalog-category-menu button.active{background:#252c57;color:#fff;border-color:#252c57}
+.table thead th{background:#f0f2f7;color:#252c57;font-weight:600}.table tbody tr:hover{background:#f6f8fb}.table tbody td{border-bottom-color:#e9ebf1}
+.need-block h3 span{background:#eef1f7;color:#252c57}.need-context{background:#f7f8fb;border-color:#e0e3eb}.need-form .need-block{box-shadow:none}
+.bars em,.bi-bar-primary{background:#252c57}.table-collapse-button{color:#252c57;background:#f4f5f9;border-color:#e0e3eb}
+.section-editor-toolbar{margin-bottom:6px}.section-editor-toolbar button{min-width:34px;min-height:34px;padding:6px;display:inline-flex;align-items:center;justify-content:center}
+.login{border-top:4px solid #009f4d;background:#fff}.login h1{color:#252c57}.center{background:#f4f5f9}
+@media(max-width:680px){.panel{padding:16px}.card{padding:16px;min-height:108px}header{padding:18px 16px}h1{font-size:24px}}

@@ -25,7 +25,7 @@ export function SectionEditor({children,title,enabled=true,initialEditing=false}
  function edit(target?:HTMLElement){setEditing(true);requestAnimationFrame(()=>{const field=target?.closest('input,textarea,select') as HTMLElement|null;const local=target?.closest('label,td')?.querySelector<HTMLElement>('input:not(:disabled),textarea:not(:disabled),select:not(:disabled)');(field||local||ref.current?.querySelector<HTMLElement>('input:not(:disabled):not([readonly]),textarea:not(:disabled):not([readonly]),select:not(:disabled)'))?.focus();});}
  if(!enabled)return <>{children}</>;
  return <div className={`section-editor${editing?' is-editing':''}`} onDoubleClick={event=>{if((event.target as HTMLElement).closest('input,textarea,select,label,td'))edit(event.target as HTMLElement);}}>
-  <div className="section-editor-toolbar"><button type="button" className="secondary" aria-controls={id} aria-pressed={editing} aria-label={`Hacer doble clic para editar ${title}`} onClick={()=>edit()}>Hacer doble clic para editar</button>{editing&&<span>Edición habilitada · guarde los cambios de la sección</span>}</div>
+  <div className="section-editor-toolbar"><button type="button" className="secondary" aria-controls={id} aria-pressed={editing} aria-label={`Editar sección ${title}`} onClick={()=>edit()} title="Editar sección"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6L16 3Z"/><path d="m13 6 5 5"/></svg></button></div>
   <div id={id} ref={ref}>{editableFields(children,editing)}</div>
  </div>;
 }
