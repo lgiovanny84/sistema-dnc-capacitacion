@@ -1,3 +1,4 @@
+import { OrganizationManager } from "./OrganizationManager";
 import { ExecutiveMatrix } from "./ExecutiveMatrix";
 import { UserNeedsSummary } from "./UserNeedsSummary";
 import { ReportCenter, ExecutiveOverview, AreaBudgetOverview } from "./ReportCenter";
@@ -1018,6 +1019,7 @@ function Admin({
   reload: () => Promise<void>;
 }) {
   const [matrixPending, setMatrixPending] = useState(0);
+  const [structurePending, setStructurePending] = useState(0);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [section, setSection] = useState<"users" | "periods" | "matrix" | "requests" | "needs" | "catalogs" | "structure">("users"),
     [kind, setKind] = useState("factor"),
@@ -1036,7 +1038,7 @@ function Admin({
     [savingCatalogs, setSavingCatalogs] = useState(false),
     [sending, setSending] = useState(false),
     [resettingUserId, setResettingUserId] = useState<string | null>(null);
-  useEffect(() => { onPendingChange(matrixPending + Object.keys(catalogDrafts).length + Object.keys(userDrafts).length); }, [matrixPending, catalogDrafts, userDrafts, onPendingChange]);
+  useEffect(() => { onPendingChange(structurePending + matrixPending + Object.keys(catalogDrafts).length + Object.keys(userDrafts).length); }, [structurePending, matrixPending, catalogDrafts, userDrafts, onPendingChange]);
   useEffect(() => () => onPendingChange(0), [onPendingChange]);
   function changeSection(next: typeof section) {
     if (next === section) return;
@@ -1044,6 +1046,7 @@ function Admin({
       if (!window.confirm("La matriz tiene cambios sin guardar. ¿Cambiar de sección y descartarlos?")) return;
       setMatrixPending(0);
     }
+    if(section === "structure" && structurePending && !window.confirm("La estructura tiene cambios sin guardar. ¿Descartarlos y cambiar de sección?")) return;
     setSection(next);
   }
   useEffect(() => {
@@ -1302,7 +1305,7 @@ function Admin({
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id}>
+                <tr key={user.id} onDoubleClick={() => setEditingUser(user)}>
                   <td>{user.full_name || "Sin nombre"}</td>
                   <td><input aria-label={`Usuario de ${user.full_name || user.email}`} value={userDraft(user).username ?? user.username} onChange={(e) => changeUser(user, { username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })} pattern="[a-z0-9._-]{3,32}" minLength={3} maxLength={32} /></td>
                   <td>{user.email}</td>
@@ -1405,16 +1408,7 @@ function Admin({
           </div>
         ))}
       </div></CompactSection>}
-      {section === "structure" && <CompactSection title="Estructura organizacional cargada"><div className="panel">
-        <h2>Estructura organizacional cargada</h2>
-        <p>{orgUnits.length} relaciones activas de grupo, área y departamento.</p>
-        <CollapsibleTable>
-          <table>
-            <thead><tr><th>Grupo</th><th>Área</th><th>Departamento</th><th>Fecha de carga</th></tr></thead>
-            <tbody>{orgUnits.map((o) => <tr key={o.id}><td>{o.group_name}</td><td>{o.area_name}</td><td>{o.department_name}</td><td>{new Date(o.created_at).toLocaleString("es-EC")}</td></tr>)}</tbody>
-          </table>
-        </CollapsibleTable>
-      </div></CompactSection>}
+      {section === "structure" && <OrganizationManager reload={reload} onPendingChange={setStructurePending}/>}
     </>
   );
 }

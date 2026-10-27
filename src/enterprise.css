@@ -348,3 +348,10 @@ button.secondary:hover:not(:disabled), .secondary:hover:not(:disabled) { backgro
 .dnc-budget-signal.has-difference [role=status]{color:#9b2020}
 .budget-review-ack{display:flex!important;align-items:flex-start;gap:10px;font-size:12px!important;line-height:1.6;color:#792323}
 .budget-review-ack input{width:16px!important;height:16px;min-height:16px!important;flex-shrink:0;margin:2px 0 0!important}
+
+.section-editor-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin:0 0 10px;flex-wrap:wrap}
+.section-editor-toolbar span{font-size:12px;color:#52677d}
+.section-editor input[readonly],.section-editor textarea[readonly]{background:#f8fafc;border-color:#e2e8f0;cursor:text}
+.section-editor:not(.is-editing) select{background-color:#f8fafc}
+.organization-manager td input{min-width:210px;width:100%}
+.section-editor{min-width:0}
