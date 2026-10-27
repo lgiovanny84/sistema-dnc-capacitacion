@@ -1,3 +1,4 @@
+import {SectionEditor} from "./SectionEditor";
 import { DncBudgetSignal } from "./DncBudgetSignal";
 import { NeedBudgetInfo } from "./BudgetModule";
 import { CompactSection } from "./CompactSection";
@@ -136,7 +137,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     </div>
     <details className="need-planning" open={planningOpen} onToggle={event => setPlanningOpen(event.currentTarget.open)}>
       <summary><span><b>Planificación propuesta</b><small>Opcional en el levantamiento · para completar o validar con Talento Humano</small></span><span className="need-disclosure" aria-hidden="true">⌄</span></summary>
-      <div className="need-planning-body"><p>Puede registrar la necesidad sin indicador, meta esperada, fechas, horas o costo. Los datos pendientes se mostrarán como «Por planificar» o «Por estimar».</p><div className="fields">
+      <div className="need-planning-body"><SectionEditor title="planificación propuesta" enabled={!!initialNeed}><p>Puede registrar la necesidad sin indicador, meta esperada, fechas, horas o costo. Los datos pendientes se mostrarán como «Por planificar» o «Por estimar».</p><div className="fields">
         <label>Indicador<input value={f.indicator} onChange={event => set("indicator", event.target.value)} placeholder="Ej.: porcentaje de expedientes devueltos." /><small>Opcional en el levantamiento. La medida que permitirá evaluar la mejora.</small></label>
         <label>Meta esperada<input value={f.goal} onChange={event => set("goal", event.target.value)} placeholder="Ej.: reducir del 12 % al 5 % en tres meses." /><small>Opcional en el levantamiento. Incluya el resultado esperado y su plazo.</small></label>
         <Select label="Tipo de capacitación" value={f.type} values={["Interna", "Externa"]} onChange={value => set("type", value)} />
@@ -148,7 +149,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
         <Input label="Trimestre" value={f.planned_start_date ? `Trimestre ${Math.ceil(Number(f.planned_start_date.slice(5, 7)) / 3)}` : "Por planificar"} onChange={() => {}} disabled />
         <Input label="Proveedor sugerido" value={f.provider} onChange={value => set("provider", value)} />
         <label className="full">Observaciones<textarea value={f.observations} onChange={e => set("observations", e.target.value)} rows={2} /></label>
-      </div></div>
+      </div></SectionEditor></div>
     </details>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="actions"><button type="button" className="secondary" disabled={saving} onClick={() => { if (initialNeed) onCancel?.(); else { setF(initialForm); setTopicEntry({ manual: false, catalog: "", custom: "" }); setPlanningOpen(false); setError(""); } }}>{initialNeed ? "Cancelar" : "Limpiar"}</button>

@@ -1,3 +1,4 @@
+import {SectionEditor,hasEditableFields} from "./SectionEditor";
 import { createContext, useContext, useState, type ReactNode } from 'react';
 // Presentation policy: only administrator tables may collapse.
 export const compactLayout = { defaultCollapsed: true };
@@ -14,5 +15,7 @@ export function CompactWorkspace({ children, enabled=false }: { children: ReactN
 }
 // Compatibility wrapper: cards, forms and sections always remain visible.
 export function CompactSection({ title, children, sectionId, summary, heading=false }: { title: string; children: ReactNode; sectionId?: string; summary?: ReactNode; heading?:boolean }) {
-  return heading?<section data-section={sectionId||title}><div className="panelhead"><div><h2>{title}</h2>{summary&&<p>{summary}</p>}</div></div>{children}</section>:<>{children}</>;
+  const admin=useContext(CompactContext).enabled;
+  const content=admin&&!/filtro/i.test(title)&&hasEditableFields(children)?<SectionEditor title={title}>{children}</SectionEditor>:children;
+  return heading?<section data-section={sectionId||title}><div className="panelhead"><div><h2>{title}</h2>{summary&&<p>{summary}</p>}</div></div>{content}</section>:<>{content}</>;
 }
