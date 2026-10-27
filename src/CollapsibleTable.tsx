@@ -21,7 +21,9 @@ function sortable(value:string):number|string{
 }
 export function compareTableValues(a:string,b:string){const x=sortable(a),y=sortable(b);return typeof x==='number'&&typeof y==='number'?x-y:String(x).localeCompare(String(y),'es',{numeric:true,sensitivity:'base'});}
 export function CollapsibleTable({children,className='',defaultCollapsed=compactLayout.defaultCollapsed,pageSize=25}:{children:ReactNode;className?:string;defaultCollapsed?:boolean;pageSize?:number}){
- const [open,setOpen,enabled]=useCompactState(defaultCollapsed),contentId=useId();
+ const tableSchema=elements(children).find(n=>n.type==='table');
+ const tableHead=tableSchema?elements(tableSchema.props.children).find(n=>n.type==='thead'):null;
+ const [open,setOpen,enabled]=useCompactState(defaultCollapsed,`${className}:${tableHead?tableText(tableHead.props.children):'table'}`),contentId=useId();
  const [controls,setControls]=useState<{schema:string;filters:Record<number,string>;sort:number|null;direction:1|-1;page:number}>({schema:'',filters:{},sort:null,direction:1,page:1});
  const table=elements(children).find(n=>n.type==='table'),parts=table?elements(table.props.children):[];
  const head=parts.find(n=>n.type==='thead'),body=parts.find(n=>n.type==='tbody'),headerRow=head?elements(head.props.children)[0]:null,headers=headerRow?elements(headerRow.props.children):[];

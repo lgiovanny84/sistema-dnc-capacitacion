@@ -298,7 +298,7 @@ export default function App() {
           ))}
         </nav>
         <div className="account">
-          <small>{session.user.email}</small>
+          <small>{profile?.username || "Usuario"}</small>
           <b>{role === "admin" ? "Administrador" : "Usuario"}</b>
           {role !== "admin" && profile?.department && (
             <small>
@@ -325,7 +325,7 @@ export default function App() {
             <button onClick={() => setNotice("")}>×</button>
           </div>
         )}
-        <CompactWorkspace enabled={role === "admin"} key={`${tab}-${activePeriod?.id}`}>
+        <CompactWorkspace enabled={role === "admin" && tab!=="new"} editEnabled={tab!=="new"} storageScope={`${session.user.id}:${tab}`} key={`${tab}-${activePeriod?.id}`}>
         {activePeriod&&(activePeriod.closed||!activePeriod.active)&&<p className="alert" role="status">Período cerrado: solo consulta. Las modificaciones están bloqueadas.</p>}
         {loading ? (
           <p>Cargando…</p>
@@ -749,7 +749,7 @@ function MiniTable({
         </thead>
         <tbody>
           {needs.map((n) => (
-            <tr key={n.id}>
+            <tr key={n.id} onDoubleClick={onEdit?e=>{if(!(e.target as HTMLElement).closest("button,input,select,textarea"))requestLeave(()=>onEdit(n));}:undefined}>
               <td>
                 <b>{n.competency}</b>
               </td>
