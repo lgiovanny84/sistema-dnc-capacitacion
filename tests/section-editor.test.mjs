@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
 import {createRequire} from 'node:module';
 import {build} from 'esbuild';
 import vm from 'node:vm';
@@ -14,10 +15,17 @@ test('section editing locks mutations until Editar while retaining disabled cont
  root=editableFields(original,true)[0];root.props.children[0].props.onChange({});assert.equal(changes,1);assert.equal(root.props.children[2].props.disabled,true);
 });
 test('double click enables the section and focuses the field selected, with an accessible Editar button alternative',()=>{
- let editing=false,focused=false;const fakeReact={...React,useState:()=>[editing,value=>editing=value],useRef:()=>({current:null}),useId:()=> 'section-id'};
+ let editing=false,focused=false;const fakeReact={...React,useContext:()=>false,useState:()=>[editing,value=>editing=value],useRef:()=>({current:null}),useId:()=> 'section-id'};
  const context={module:{exports:{}},exports:{},requestAnimationFrame:fn=>fn(),require:name=>name==='react'?fakeReact:require(name)};vm.runInNewContext(compiled.outputFiles[0].text,context);
  const component=context.module.exports.SectionEditor;const field={focus(){focused=true},closest(selector){return selector.includes('input')?this:null}};
  const tree=component({title:'estructura',children:React.createElement('input',{value:'X',onChange(){}})});
  tree.props.onDoubleClick({target:field});assert.equal(editing,true);assert.equal(focused,true);
- const button=tree.props.children[0].props.children;assert.equal(button.props.type,'button');assert.equal(button.props['aria-label'],'Editar sección estructura');assert.equal(button.props['aria-controls'],'section-id');editing=false;button.props.onClick();assert.equal(editing,true);
+ const button=tree.props.children[0].props.children;assert.equal(button.props.type,'button');assert.equal(button.props['aria-label'],'Editar pantalla estructura');assert.equal(button.props['aria-controls'],'section-id');editing=false;button.props.onClick();assert.equal(editing,true);
+});
+
+test('an editing screen renders one pencil even when its content has several editable blocks',()=>{
+ const Editor=ctx.module.exports.SectionEditor;
+ const html=renderToStaticMarkup(React.createElement(Editor,{title:'pantalla'},React.createElement(Editor,{title:'bloque A'},React.createElement('input',{value:'A',onChange(){}})),React.createElement(Editor,{title:'bloque B'},React.createElement('input',{value:'B',disabled:true,onChange(){}}))));
+ assert.equal((html.match(/aria-label="Editar pantalla/g)||[]).length,1);
+ assert.match(html,/disabled=""/);assert.doesNotMatch(html,/Hacer doble clic para editar/);
 });

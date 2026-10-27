@@ -95,6 +95,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
   },initialNeed?"Modificar necesidad":"Nueva necesidad",()=>setF(initialForm));
   if(period?.closed||period?.active===false)return <p className="alert" role="status">Período cerrado: solo consulta. No se pueden registrar ni modificar necesidades.</p>;
   return <form ref={setFormElement} className="panel form need-form" onSubmit={submit} onInvalidCapture={event => { if ((event.target as HTMLElement).closest(".need-planning")) setPlanningOpen(true); }}>
+    <SectionEditor title="necesidad de capacitación" enabled={!!initialNeed&&profile?.role==='admin'}>
     <div className="need-intro"><span className="eyebrow">DETECCIÓN DE NECESIDADES DE CAPACITACIÓN (DNC)</span>
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>
       </div>
@@ -157,6 +158,7 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
         <label className="full">Observaciones<textarea value={f.observations} onChange={e => set("observations", e.target.value)} rows={2} /></label>
       </div></SectionEditor></div>
     </details>
+    </SectionEditor>
     {error && <div className="error" role="alert">{error}</div>}
     <div className="actions"><button type="button" className="secondary" disabled={saving} onClick={() => { if (initialNeed) onCancel?.(); else { setF(initialForm); setTopicEntry({ manual: false, catalog: "", custom: "" }); setPlanningOpen(false); setError(""); } }}>{initialNeed ? "Cancelar" : "Limpiar"}</button>
       <button className="primary" disabled={saving}>{saving ? "Guardando…" : initialNeed ? "Guardar cambios" : "Registrar necesidad"}</button></div>
