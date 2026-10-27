@@ -1,3 +1,4 @@
+import {usePendingChanges} from "./UnsavedChanges";
 import {SectionEditor} from "./SectionEditor";
 import { DncBudgetSignal } from "./DncBudgetSignal";
 import { NeedBudgetInfo } from "./BudgetModule";
@@ -87,8 +88,13 @@ export function NeedForm({ catalogs, competencyMatrix, orgUnits, profile, onDone
     finally { setSaving(false); }
   }
 
+  const [formElement,setFormElement]=useState<HTMLFormElement|null>(null);
+  usePendingChanges(dirty&&!period?.closed&&period?.active!==false,async()=>{
+    if(!formElement?.reportValidity())return false;
+    await submit({preventDefault(){}} as FormEvent<HTMLFormElement>);
+  },initialNeed?"Modificar necesidad":"Nueva necesidad",()=>setF(initialForm));
   if(period?.closed||period?.active===false)return <p className="alert" role="status">Período cerrado: solo consulta. No se pueden registrar ni modificar necesidades.</p>;
-  return <form className="panel form need-form" onSubmit={submit} onInvalidCapture={event => { if ((event.target as HTMLElement).closest(".need-planning")) setPlanningOpen(true); }}>
+  return <form ref={setFormElement} className="panel form need-form" onSubmit={submit} onInvalidCapture={event => { if ((event.target as HTMLElement).closest(".need-planning")) setPlanningOpen(true); }}>
     <div className="need-intro"><span className="eyebrow">DETECCIÓN DE NECESIDADES DE CAPACITACIÓN (DNC)</span>
       <h2>{initialNeed ? "Modificar necesidad de capacitación" : "Nueva necesidad de capacitación"}</h2>
       </div>

@@ -1,3 +1,4 @@
+import {usePendingChanges} from "./UnsavedChanges";
 import {SectionEditor} from "./SectionEditor";
 import { applyDncBudgets, dncBudget, dncBudgetLabel } from './budgetDnc';
 import { CollapsibleTable } from './CollapsibleTable';
@@ -55,6 +56,7 @@ export function BudgetModule({state,error,period,needs,units,records,mappings,on
   function useDncBudget(ids:string[]){if(readOnly)return;try{update(applyDncBudgets(draft,ids,needs));}catch(e){setMessage((e as Error).message);}}
   const invalidTopics=draft.nodes.filter(n=>n.kind==='activity'&&!matchingDncTopic(n,needs));
   async function save(){if(readOnly){setMessage('Período cerrado: solo consulta.');return;}if(invalidTopics.length){setMessage('Retire las asignaciones sin DNC antes de guardar.');return;}if(calc.errors.length){setMessage(calc.errors.join(' '));return;}setBusy(true);try{const result=await supabase!.rpc('save_training_budget',{p_period:period.id,p_revision:revision,p_payload:draft});if(result.error)throw result.error;if(!result.data?.revision)throw new Error('No se confirmó el guardado.');setDraft(result.data.payload);setRevision(result.data.revision);onSaved(result.data);setDirty(false);setMessage('Presupuesto guardado.');}catch(e){setMessage((e as {message?:string}).message||'No fue posible guardar; se conserva el borrador.');}finally{setBusy(false);}}
+  usePendingChanges(dirty,save,"Presupuestos",()=>{setDraft(initial());setDirty(false);});
   const logisticsDepartments=draft.nodes.filter(n=>n.kind==='department'&&n.fund===fund&&(!owner||
     (owner.kind==='department'?n.id===owner.id:owner.kind==='area'?n.parent===owner.id:draft.nodes.find(a=>a.id===n.parent)?.parent===owner.id)));
   const logisticsOwner=owner?.kind==='department'?owner:logisticsDepartments.find(n=>n.id===logisticsDepartment);

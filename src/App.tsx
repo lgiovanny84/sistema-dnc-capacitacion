@@ -1,3 +1,4 @@
+import {requestLeave,usePendingChanges} from "./UnsavedChanges";
 import { OrganizationManager } from "./OrganizationManager";
 import { ExecutiveMatrix } from "./ExecutiveMatrix";
 import { UserNeedsSummary } from "./UserNeedsSummary";
@@ -115,12 +116,6 @@ export default function App() {
     [recovery, setRecovery] = useState(false);
   const authUserId = useRef<string | null>(null);
   const loadVersion = useRef(0);
-  useEffect(() => {
-    if (!configurationPending) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [configurationPending]);
   useEffect(() => {
     if (!supabase) {
       setLoading(false);
@@ -259,8 +254,7 @@ export default function App() {
   const periodTotalHours = periodNeeds.reduce((sum,n)=>sum+Number(n.hours)*Number(n.participants),0);
   const periodBudget = periodNeeds.reduce((sum,n)=>sum+Number(n.estimated_cost),0);
   function navigate(next: string) {
-    if (next !== tab && configurationPending && !window.confirm("Tiene cambios de configuración sin guardar. ¿Salir y descartarlos?")) return;
-    setTab(next);
+    if(next!==tab)requestLeave(()=>setTab(next));
   }
   return (
     <BudgetContext.Provider value={role === "admin" ? financialBudget : null}><div className={`shell ${menuCollapsed ? "collapsed" : ""}`}>
@@ -311,7 +305,7 @@ export default function App() {
               {profile.can_view_entire_area ? `Área: ${profile.area}` : `Departamento: ${profile.department}`}
             </small>
           )}
-          <button onClick={() => supabase!.auth.signOut()} title="Cerrar sesión">
+          <button onClick={() => requestLeave(()=>{void supabase!.auth.signOut();})} title="Cerrar sesión">
             <span className="logout-full">Cerrar sesión</span><span className="logout-short">Salir</span>
           </button>
         </div>
@@ -323,7 +317,7 @@ export default function App() {
             <h1>{pageMeta[tab]?.title ?? "Gestión de capacitación"}</h1>
             <p className="page-description">{pageMeta[tab]?.description}</p>
           </div>
-          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { if(configurationPending && !window.confirm("Tiene cambios sin guardar. ¿Cambiar de período y descartarlos?")) return; setSelectedPeriodId(e.target.value); localStorage.setItem("dnc-period-id", e.target.value); }} disabled={!selectablePeriods.length || (tab === "reports" && role !== "admin")}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
+          <div className="header-controls"><label className="period-selector">Período<select value={activePeriod?.id ?? ""} onChange={(e) => { const id=e.target.value;requestLeave(()=>{setSelectedPeriodId(id);localStorage.setItem("dnc-period-id",id);}); }} disabled={!selectablePeriods.length || (tab === "reports" && role !== "admin")}>{selectablePeriods.map((period) => <option key={period.id} value={period.id}>{period.name}{role === "admin" && !period.active ? " · Inactivo" : ""} · {period.start_date} a {period.end_date}</option>)}</select></label><span className="secure">● Conexión segura</span></div>
         </header>
         {notice && (
           <div className="alert">
@@ -439,7 +433,7 @@ function Loading() {
   );
 }
 function DisabledAccess({ email }: { email: string }) {
-  return <div className="center"><div className="login wide"><img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" /><h1>Acceso inactivo</h1><p>El usuario {email} se encuentra inactivo o eliminado. Sus registros históricos se conservan, pero no puede ingresar al Sistema de Gestión Integral de Capacitación.</p><button className="primary" onClick={() => supabase!.auth.signOut()}>Cerrar sesión</button></div></div>;
+  return <div className="center"><div className="login wide"><img className="login-logo" src="/logo-atuntaqui-icon.png" alt="Cooperativa Atuntaqui" /><h1>Acceso inactivo</h1><p>El usuario {email} se encuentra inactivo o eliminado. Sus registros históricos se conservan, pero no puede ingresar al Sistema de Gestión Integral de Capacitación.</p><button className="primary" onClick={() => requestLeave(()=>{void supabase!.auth.signOut();})}>Cerrar sesión</button></div></div>;
 }
 function PasswordField({ id, label, value, onChange, minLength }: {
   id: string;
@@ -822,7 +816,7 @@ function List({
   period?: PlanningPeriod;
 }) {
   const [editDirty, setEditDirty] = useState(false), [editBusy, setEditBusy] = useState(false);
-  function closeEditor() { if (!editBusy && (!editDirty || window.confirm("Tiene cambios sin guardar. ¿Cerrar la ventana y descartarlos?"))) { setEditing(null); setEditDirty(false); } }
+  function closeEditor() { if (!editBusy) requestLeave(()=>{setEditing(null);setEditDirty(false);}); }
   const [editing, setEditing] = useState<Need | null>(null),
     [requesting, setRequesting] = useState<Need | null>(null),
     [requestedField, setRequestedField] = useState(""),
@@ -957,13 +951,15 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
   const [drafts, setDrafts] = useState<Record<string, Pick<PlanningPeriod, "name" | "start_date" | "end_date" | "active" | "closed">>>({});
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [createBaseline,setCreateBaseline]=useState(JSON.stringify([name,startDate,endDate]));
   async function createPeriod(e: FormEvent) {
     e.preventDefault();
+    if(!name.trim()||!startDate||!endDate){setMessage("Complete el nombre y las fechas del período.");return false;}
     if (endDate < startDate) { setMessage("La fecha final no puede ser anterior a la fecha inicial."); return; }
     if (periods.some((period) => startDate <= period.end_date && endDate >= period.start_date)) { setMessage("El rango se superpone con un período existente. Ajuste las fechas antes de guardar."); return; }
     const { error } = await supabase!.from("planning_periods").insert({ name: name.trim(), start_date: startDate, end_date: endDate, active: true });
     setMessage(error?.message ?? "Período creado correctamente.");
-    if (!error) await reload();
+    if (!error) {setCreateBaseline(JSON.stringify([name,startDate,endDate]));await reload();}
   }
   const draft = (period: PlanningPeriod) => drafts[period.id] ?? { name: period.name, start_date: period.start_date, end_date: period.end_date, active: period.active, closed: !!period.closed };
   function change(period: PlanningPeriod, values: Partial<ReturnType<typeof draft>>) {
@@ -984,6 +980,8 @@ function PeriodManager({ periods, reload }: { periods: PlanningPeriod[]; reload:
     setMessage(error?.message ?? `${entries.length} períodos fueron actualizados.`);
     if (!error) { setDrafts({}); await reload(); }
   }
+  usePendingChanges(JSON.stringify([name,startDate,endDate])!==createBaseline,()=>createPeriod({preventDefault(){}} as FormEvent),"Nuevo período",()=>{const [n,s,e]=JSON.parse(createBaseline);setName(n);setStartDate(s);setEndDate(e);});
+  usePendingChanges(Object.keys(drafts).length>0,saveAll,"Períodos",()=>setDrafts({}));
   async function remove(period: PlanningPeriod) {
     if (!window.confirm(`¿Eliminar el período “${period.name}”? Solo será posible si no contiene registros vinculados.`)) return;
     const { error } = await supabase!.from("planning_periods").delete().eq("id", period.id);
@@ -1038,16 +1036,11 @@ function Admin({
     [savingCatalogs, setSavingCatalogs] = useState(false),
     [sending, setSending] = useState(false),
     [resettingUserId, setResettingUserId] = useState<string | null>(null);
+  const [newUserForm,setNewUserForm]=useState<HTMLFormElement|null>(null),[catalogForm,setCatalogForm]=useState<HTMLFormElement|null>(null);
   useEffect(() => { onPendingChange(structurePending + matrixPending + Object.keys(catalogDrafts).length + Object.keys(userDrafts).length); }, [structurePending, matrixPending, catalogDrafts, userDrafts, onPendingChange]);
   useEffect(() => () => onPendingChange(0), [onPendingChange]);
   function changeSection(next: typeof section) {
-    if (next === section) return;
-    if (section === "matrix" && matrixPending) {
-      if (!window.confirm("La matriz tiene cambios sin guardar. ¿Cambiar de sección y descartarlos?")) return;
-      setMatrixPending(0);
-    }
-    if(section === "structure" && structurePending && !window.confirm("La estructura tiene cambios sin guardar. ¿Descartarlos y cambiar de sección?")) return;
-    setSection(next);
+    if(next!==section)requestLeave(()=>setSection(next));
   }
   useEffect(() => {
     void loadUsers();
@@ -1090,6 +1083,10 @@ function Admin({
       await reload();
     }
   }
+  usePendingChanges(name!=='',async()=>{if(!catalogForm?.reportValidity())return false;await add({preventDefault(){}} as FormEvent);},"Nueva categoría",()=>setName(''));
+  usePendingChanges(!!(fullName||email||newUsername)||newRole!=="user",async()=>{if(!newUserForm?.reportValidity())return false;if(!fullName.trim()||!newUsername.trim()||!email.trim()){setMsg('Complete nombre, usuario y correo.');return false;}await invite({preventDefault(){}} as FormEvent);return {stay:true,message:'Revise el resultado de creación del usuario y copie sus credenciales antes de continuar.'};},"Nuevo usuario",()=>{setFullName('');setEmail('');setNewUsername('');setNewRole('user');});
+  usePendingChanges(Object.keys(catalogDrafts).length>0,saveCatalogChanges,"Catálogos",()=>setCatalogDrafts({}));
+  usePendingChanges(Object.keys(userDrafts).length>0,saveUserChanges,"Usuarios y accesos",()=>setUserDrafts({}));
   async function deleteCatalog(c: Catalog) {
     if (!window.confirm(`¿Eliminar definitivamente “${c.name}”?`)) return;
     const { error } = await supabase!.from("catalogs").delete().eq("id", c.id);
@@ -1237,6 +1234,7 @@ function Admin({
       {section === "needs" && (period?.closed||period?.active===false?<MiniTable needs={needs}/>:<AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} />)}
       {section === "users" && editingUser && (
         <AdminUserEditor
+          key={editingUser.id}
           user={editingUser}
           catalogs={catalogs}
           orgUnits={orgUnits}
@@ -1249,7 +1247,7 @@ function Admin({
       )}
       {section === "users" && <CompactSection title="Usuarios y accesos" summary={`${users.length} usuarios · ${Object.keys(userDrafts).length} cambios pendientes`}><div className="panel">
         <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Active, inactive o restaure accesos y guarde todos los cambios. La restauración conserva el perfil y su histórico. Genere una clave temporal para recuperar el ingreso.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers || Boolean(resettingUserId)} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
-        <form className="userform" onSubmit={invite}>
+        <form ref={setNewUserForm} className="userform" onSubmit={invite}>
           <Input
             label="Nombre completo"
             value={fullName}
@@ -1305,7 +1303,7 @@ function Admin({
             </thead>
             <tbody>
               {users.map((user) => (
-                <tr key={user.id} onDoubleClick={() => setEditingUser(user)}>
+                <tr key={user.id} onDoubleClick={e => {if(!(e.target as HTMLElement).closest("input,select,textarea,button"))requestLeave(()=>setEditingUser(user));}}>
                   <td>{user.full_name || "Sin nombre"}</td>
                   <td><input aria-label={`Usuario de ${user.full_name || user.email}`} value={userDraft(user).username ?? user.username} onChange={(e) => changeUser(user, { username: e.target.value.toLowerCase().replace(/[^a-z0-9._-]/g, "") })} pattern="[a-z0-9._-]{3,32}" minLength={3} maxLength={32} /></td>
                   <td>{user.email}</td>
@@ -1358,7 +1356,7 @@ function Admin({
                     {user.role === "user" && <button className="secondary" disabled={Boolean(user.deleted_at) || savingUsers || sending || Boolean(resettingUserId) || Boolean(Object.keys(userDrafts).length)} onClick={() => void resetTemporaryPassword(user)}>
                       {resettingUserId === user.id ? "Generando…" : "Generar clave temporal"}
                     </button>}{" "}
-                    <button className="secondary" disabled={Boolean(user.deleted_at)} onClick={() => setEditingUser(user)}>
+                    <button className="secondary" disabled={Boolean(user.deleted_at)} onClick={() => requestLeave(()=>setEditingUser(user))}>
                       Editar perfil
                     </button>{" "}<button className="secondary danger" disabled={Boolean(user.deleted_at) || user.id === currentUserId} onClick={() => void removeUser(user)}>Eliminar acceso</button>
                   </td>
@@ -1374,7 +1372,7 @@ function Admin({
           Los cambios afectan las opciones de nuevos registros y quedan
           asociados al administrador.
         </p>
-        <form className="inline" onSubmit={add}>
+        <form ref={setCatalogForm} className="inline" onSubmit={add}>
           <label>Catálogo<select value={kind} onChange={event => { setKind(event.target.value); setCatalogSearch(""); }}>{Object.entries(kinds).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
           <Input
             label="Nueva categoría"
@@ -1548,14 +1546,16 @@ function AdminUserEditor({
     else await onSaved();
   }
 
+  const [formElement,setFormElement]=useState<HTMLFormElement|null>(null);
+  usePendingChanges(fullName!==(user.full_name??'')||position!==(user.position??'')||unitId!==(currentUnit?.id??'')||editRole!==user.role||active!==user.active||areaAccess!==user.can_view_entire_area,async()=>{if(!formElement?.reportValidity())return false;await submit({preventDefault(){}} as FormEvent);},"Perfil del usuario",()=>{setFullName(user.full_name??'');setPosition(user.position??'');setUnitId(currentUnit?.id??'');setEditRole(user.role);setActive(user.active);setAreaAccess(user.can_view_entire_area);});
   return (
-    <form className="panel form admin-user-editor" onSubmit={submit}>
+    <form ref={setFormElement} className="panel form admin-user-editor" onSubmit={submit}>
       <div className="panelhead">
         <div>
           <h2>Actualizar información del usuario</h2>
           <p>{user.email}</p>
         </div>
-        <button type="button" className="secondary" onClick={onCancel}>
+        <button type="button" className="secondary" onClick={()=>requestLeave(onCancel)}>
           Cerrar
         </button>
       </div>
@@ -1588,7 +1588,7 @@ function AdminUserEditor({
       </div>
       {error && <div className="error">{error}</div>}
       <div className="actions">
-        <button type="button" className="secondary" onClick={onCancel}>Cancelar</button>
+        <button type="button" className="secondary" onClick={()=>requestLeave(onCancel)}>Cancelar</button>
         <button className="primary" disabled={saving}>{saving ? "Guardando…" : "Guardar usuario"}</button>
       </div>
     </form>
@@ -1629,6 +1629,7 @@ function AdminNeeds({ needs, competencyMatrix, period, reload }: { needs: Need[]
       await reload();
     }
   }
+  usePendingChanges(Object.keys(drafts).length>0,saveAll,"Temas y presupuesto DNC",()=>setDrafts({}));
   async function remove(n: Need) {
     if (!window.confirm(`¿Eliminar la necesidad “${n.competency}”? Esta acción quedará auditada.`)) return;
     const { error } = await supabase!.from("training_needs").delete().eq("id", n.id);
