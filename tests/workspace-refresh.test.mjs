@@ -70,7 +70,7 @@ test('editing opens a guarded modal while the existing list remains mounted, and
  let tree=render();let table=nodes(tree).find(node=>node.type?.name==='MiniTable');table.props.onEdit(props.needs[0]);tree=render();
  assert.ok(nodes(tree).find(node=>node.type?.name==='MiniTable'),'list stays mounted behind editor');
  let modal=nodes(tree).find(node=>node.type?.name==='Modal');assert.ok(modal);
- const form=nodes(tree).find(node=>node.type?.name==='NeedForm');form.props.onDirtyChange(true);tree=render();modal=nodes(tree).find(node=>node.type?.name==='Modal');modal.props.onClose();assert.equal(confirmations,1);assert.ok(nodes(render()).find(node=>node.type?.name==='Modal'));
+ const form=nodes(tree).find(node=>node.type?.name==='NeedForm');form.props.onDirtyChange(true);tree=render();modal=nodes(tree).find(node=>node.type?.name==='Modal');form.props.onSavingChange(true);tree=render();modal=nodes(tree).find(node=>node.type?.name==='Modal');modal.props.onClose();assert.equal(confirmations,0);assert.ok(nodes(render()).find(node=>node.type?.name==='Modal'),'busy editor cannot close');
  props.role='user';tree=render();assert.equal(nodes(tree).find(node=>node.type?.name==='MiniTable').props.onEdit,undefined);assert.equal(nodes(tree).find(node=>node.type?.name==='Modal'),undefined);
 });
 

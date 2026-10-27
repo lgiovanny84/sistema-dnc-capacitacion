@@ -19,5 +19,5 @@ test('double click enables the section and focuses the field selected, with an a
  const component=context.module.exports.SectionEditor;const field={focus(){focused=true},closest(selector){return selector.includes('input')?this:null}};
  const tree=component({title:'estructura',children:React.createElement('input',{value:'X',onChange(){}})});
  tree.props.onDoubleClick({target:field});assert.equal(editing,true);assert.equal(focused,true);
- const button=tree.props.children[0].props.children[0];assert.equal(button.props.type,'button');assert.equal(button.props['aria-label'],'Editar estructura');assert.equal(button.props['aria-controls'],'section-id');editing=false;button.props.onClick();assert.equal(editing,true);
+ const button=tree.props.children[0].props.children[0];assert.equal(button.props.type,'button');assert.equal(button.props['aria-label'],'Hacer doble clic para editar estructura');assert.equal(button.props['aria-controls'],'section-id');editing=false;button.props.onClick();assert.equal(editing,true);
 });

@@ -1,3 +1,4 @@
+import {requestLeave} from "./UnsavedChanges";
 import { useBudget } from "./BudgetModule";
 import { calculateBudget } from "./budgetModel";
 import { CompactSection } from "./CompactSection";
@@ -61,7 +62,7 @@ export function AdminOverview({ showGroups = true, needs, groups, catalogs, comp
     } catch { setExportError("No se pudo exportar las actividades pendientes. Intente nuevamente."); }
     finally { setExporting(false); }
   }
-  function close() { if (!busy && (!dirty || window.confirm("Tiene cambios sin guardar. ¿Cerrar la ventana y descartarlos?"))) { setEditing(null); setDirty(false); } }
+  function close() { if (!busy) requestLeave(()=>{setEditing(null);setDirty(false);}); }
   return <>
     {showGroups && <GroupBudgetCards needs={needs} groups={groups} periodName={period?.name ?? "Sin período"} />}
     <CompactSection title="Actividades con datos pendientes"><section className="panel completion-panel" aria-label="Actividades con datos pendientes"><div className="panelhead"><div><h2>Actividades con datos pendientes</h2><p>Identifique qué falta y complete cada actividad desde esta pantalla.</p></div><span className={`completion-badge ${pending.length ? "planning" : "complete"}`}>{pending.length} por completar</span></div>
