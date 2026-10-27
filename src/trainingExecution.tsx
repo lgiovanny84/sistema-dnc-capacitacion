@@ -1,3 +1,4 @@
+import {SectionEditor} from "./SectionEditor";
 import {usePendingChanges,requestLeave} from "./UnsavedChanges";
 import { CompactSection } from "./CompactSection";
 import { useBudget, BudgetFinancialSummary } from "./BudgetModule";
@@ -485,13 +486,13 @@ function BudgetManager({ records, budgets, plans, departments, period, reload }:
   const plannedDepartments = [...new Set(plans.map((plan) => plan.department).filter(Boolean))];
   const departmentOptions = [...new Set([...departments, ...plannedDepartments])].sort((a, b) => a.localeCompare(b, "es"));
   const requestingAreas = [...new Set(records.map((record) => record.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
-  return <>
+  return <SectionEditor title="presupuesto y horas">
     <CompactSection title="Reglas de cruce ·"><div className="panel"><div className="panelhead"><div><h2>Reglas de cruce · {period.name}</h2><p>Los valores y horas presupuestadas se toman automáticamente del Módulo 1. Configure solo las excepciones de denominación.</p></div></div>
       <form className="inline budget-form mapping-form" onSubmit={save}><label>DEPARTAMENTO del Módulo 1<input list="budget-departments" value={department} onChange={(e) => setDepartment(e.target.value)} required /><datalist id="budget-departments">{departmentOptions.map((x) => <option key={x}>{x}</option>)}</datalist></label><label>AREA REQUIRIENTE alternativa del Excel<input list="requesting-areas" value={crossOverride} onChange={(e) => setCrossOverride(e.target.value)} placeholder="Vacío = cruce automático" /><datalist id="requesting-areas">{requestingAreas.map((x) => <option key={x}>{x}</option>)}</datalist></label><button className="primary">Guardar regla</button></form>{message && <div className="statusmsg">{message}</div>}
     </div></CompactSection>
     <BudgetSummary records={records} budgets={budgets} plans={plans} periodName={period.name} />
     <CompactSection title="Recategorizaciones configuradas"><div className="panel"><div className="panelhead"><div><h2>Recategorizaciones configuradas</h2><p>Si elimina una regla, el sistema volverá a comparar los nombres automáticamente.</p></div><button className="primary" disabled={!Object.keys(budgetDrafts).length || savingAll} onClick={() => void saveBudgetChanges()}>{savingAll ? "Guardando…" : `Guardar todos los cambios (${Object.keys(budgetDrafts).length})`}</button></div><CollapsibleTable className="budget-editor"><table><thead><tr><th>Año</th><th>Departamento del sistema</th><th>AREA REQUIRIENTE alternativa</th><th>Acción</th></tr></thead><tbody>{configured.map((b) => { const draft = budgetDraft(b); return <tr key={b.id}><td>{b.year}</td><td>{b.department_name}</td><td><input list="requesting-areas" value={draft.requesting_area_name} onChange={(e) => changeBudget(b, { requesting_area_name: e.target.value })} placeholder="Automático por departamento" /></td><td><button className="secondary danger" onClick={() => void remove(b.id)}>Eliminar regla</button></td></tr>; })}{!configured.length && <tr><td colSpan={4}>No existen recategorizaciones. Todos los cruces son automáticos.</td></tr>}</tbody></table></CollapsibleTable></div></CompactSection>
-  </>;
+  </SectionEditor>;
 }
 
 function ExecutionDashboard({ records, budgets, plans, periodName }: { records: TrainingRecord[]; budgets: BudgetAllocation[]; plans: TrainingPlan[]; periodName: string }) {

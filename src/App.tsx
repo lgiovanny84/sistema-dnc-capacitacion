@@ -1,3 +1,4 @@
+import {SectionEditor} from "./SectionEditor";
 import {requestLeave,usePendingChanges} from "./UnsavedChanges";
 import { OrganizationManager } from "./OrganizationManager";
 import { ExecutiveMatrix } from "./ExecutiveMatrix";
@@ -1212,7 +1213,7 @@ function Admin({
     if (!error) await loadUsers();
   }
   return (
-    <>
+    <SectionEditor title="catálogos" enabled={section==='catalogs'}>
       <div className="admin-workspace">
         <div className="admin-workspace-head">
           <div><span className="eyebrow">CONFIGURACIÓN Y CONTROL</span><h2>Administración</h2><p>Gestione una sección a la vez. Los controles de configuración son exclusivos del administrador.</p></div>
@@ -1407,7 +1408,7 @@ function Admin({
         ))}
       </div></CompactSection>}
       {section === "structure" && <OrganizationManager reload={reload} onPendingChange={setStructurePending}/>}
-    </>
+    </SectionEditor>
   );
 }
 
