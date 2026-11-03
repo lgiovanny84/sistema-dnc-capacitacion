@@ -9,3 +9,7 @@ Los mensajes administrativos y las credenciales recién generadas permanecen den
 Se usa la capa superior de `dialog.showModal()` para enfoque, teclado y superposición, sin trasladar los formularios a otra raíz de React. El foco vuelve al control de origen al cerrar.
 
 Validación: compilación, 137 pruebas automatizadas y comprobación en Chromium con datos sintéticos de apertura, edición de perfil, protección de borradores, cierre, reapertura y ancho móvil. No se cambian funciones de base de datos, autenticación ni configuración de acceso.
+
+## Ajuste a la ventana visible
+
+Los diálogos toman el ancho de su contenido con un límite vinculado al ancho del navegador. La altura crece hasta el espacio visible (`dvh`); el encabezado permanece accesible y el cuerpo permite desplazamiento interno. Las tablas anchas mantienen su desplazamiento horizontal y los formularios reorganizan sus columnas. Se verificaron tamaños 1440×1000, 1024×600, 390×844, 844×390 y 320×568, con acceso al botón de guardar y sin desbordamiento horizontal del formulario. No se modifican formularios, validaciones ni datos.

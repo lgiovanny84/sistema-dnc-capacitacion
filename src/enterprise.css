@@ -373,3 +373,51 @@ button.secondary,.secondary{border-color:#a4aabb;color:#252c57}button.secondary:
 .section-editor-toolbar{margin-bottom:6px}.section-editor-toolbar button{min-width:34px;min-height:34px;padding:6px;display:inline-flex;align-items:center;justify-content:center}
 .login{border-top:4px solid #009f4d;background:#fff}.login h1{color:#252c57}.center{background:#f4f5f9}
 @media(max-width:680px){.panel{padding:16px}.card{padding:16px;min-height:108px}header{padding:18px 16px}h1{font-size:24px}}
+
+/* Dialogs grow with their content and stay inside the available viewport. */
+.edit-modal {
+  box-sizing: border-box;
+  width: fit-content;
+  min-width: min(760px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  height: auto;
+  min-height: 0;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  overflow: hidden;
+}
+.edit-modal-head { min-width: 0; }
+.edit-modal-head > div { min-width: 0; }
+.edit-modal-head h2 { overflow-wrap: anywhere; }
+.edit-modal-head .modal-close { flex: 0 0 auto; }
+.edit-modal-body {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.edit-modal-body > *, .edit-modal-body fieldset {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+.edit-modal-body .fields, .edit-modal-body .userform {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+}
+.edit-modal-body :is(input, select, textarea) { box-sizing: border-box; max-width: 100%; }
+.edit-modal-body :is(.actions, .panelhead, .inline) { flex-wrap: wrap; }
+.edit-modal-body .table { max-width: 100%; overflow: auto; }
+@media (max-width: 640px) {
+  .edit-modal { min-width: 0; width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .edit-modal-head { gap: 12px; }
+  .edit-modal-body { padding: 16px; }
+  .edit-modal-body .need-essential { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-height: 500px) {
+  .edit-modal-head { padding: 10px 16px; }
+  .edit-modal-head .eyebrow { display: none; }
+  .edit-modal-body { padding: 12px 16px; }
+}
