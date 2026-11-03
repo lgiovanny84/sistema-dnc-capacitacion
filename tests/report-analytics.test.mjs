@@ -27,3 +27,23 @@ test('complete DNC includes separate logistics, preserves zero and missing data,
  budget.nodes.find(n=>n.kind==='activity').costs.travel=null;
  const missing=makeReport('complete',analyticsData([need],records,budget,mappings,units,scope),budget)[0];assert.equal(missing.meals,100);assert.equal(missing.travel,null);assert.equal(missing.total,null);
 });
+
+test('budget distribution shows one child level per selected scope and never sums four copies of an allocation',()=>{
+ for(const [filter,level,amount] of [[{},'Grupo',10000],[{group:'Colaboradores'},'Área',10000],[{group:'Colaboradores',area:'Administración'},'Departamento',3000],[{group:'Colaboradores',area:'Administración',department:'Talento Humano'},'Tema',1500]]){
+  const m=analyticsData([need],records,data,mappings,units,{...scope,...filter}),rows=makeReport('distribution',m,data);
+  assert.equal(rows.length,1);assert.equal(rows[0].level,level);assert.equal(rows[0].assigned,amount);assert.ok(rows[0].name);assert.equal(rows[0].spent,200);assert.equal(rows[0].balance,amount-200);
+ }
+ const m=analyticsData([need],records,data,mappings,units,scope);assert.equal(m.distributionAssigned,1000000);assert.equal(m.distributionPending,0);
+ const dept=makeReport('distribution',analyticsData([need],records,data,mappings,units,{...scope,area:'Administración'}),data)[0];assert.equal(dept.distributed,1500);assert.equal(dept.undistributed,1500);assert.equal(dept.balance,2800);
+});
+
+
+test('shared DNC reports inherit the actual fund without duplicating amounts; truly unallocated topics stay unassigned',()=>{
+ const needs=[need,{...need,id:'shared'},{...need,id:'unfunded',competency:'Sin presupuesto'}];
+ const rows=makeReport('complete',analyticsData(needs,records,data,mappings,units,scope),data);
+ assert.equal(rows[1].fund,'Institucional');assert.equal(rows[1].assigned,null);assert.equal(rows[1].spent,null);assert.equal(rows[1].balance,null);assert.match(rows[1].financial_reference,/Compartido/);
+ assert.equal(rows[2].fund,'Sin asignación directa');assert.equal(rows[2].assigned,0);assert.equal(rows.reduce((sum,r)=>sum+(r.assigned||0),0),1500);
+ const broker={...data,funds:[...data.funds],nodes:[...data.nodes,{...data.nodes.at(-1),id:'broker',fund:'Broker',parent:'Broker',value:5000,mode:'fixed'}]};
+ const combined=makeReport('complete',analyticsData(needs,[],broker,[],units,scope),broker);assert.equal(combined[1].fund,'Institucional · Broker');
+ const filtered=makeReport('complete',analyticsData(needs,[],data,[],units,{...scope,fund:'Broker'}),data);assert.equal(filtered.length,0);
+});

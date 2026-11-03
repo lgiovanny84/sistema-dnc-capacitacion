@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';import {test} from 'node:test';import {build} from 'esbuild';import vm from 'node:vm';import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url),ExcelJS=require('exceljs');
+const bundle=await build({stdin:{contents:"export * from './completeReportWorkbook';export * from './reportAnalytics';export {needReportColumns} from './needPlanning';",resolveDir:new URL('../src',import.meta.url).pathname,loader:'ts'},bundle:true,write:false,platform:'node',format:'cjs',external:['exceljs']});
+const context={module:{exports:{}},exports:{},require,Date,Intl};vm.runInNewContext(bundle.outputFiles[0].text,context);
+const {buildCompleteReportWorkbook,analyticsData,needReportColumns,institutionalPlanKeys,sheetName}=context.module.exports;
+const moneyKeys=['assigned','spent','balance','meals','lodging','travel','total','estimated_cost'];
+const fullColumns=[['dnc_id','Identificador DNC'],['owner_id','Identificador del solicitante'],...needReportColumns,['fund','Fondo'],...moneyKeys.filter(k=>k!=='estimated_cost').map(k=>[k,k]),['financial_reference','Referencia financiera'],['pending_data','Datos por completar']].map(([key,label])=>({key,label,type:moneyKeys.includes(key)?'money':key.startsWith('planned_')?'date':undefined,total:moneyKeys.includes(key)}));
+const period={name:'2027',start_date:'2027-01-01',end_date:'2027-12-31'};const scope={group:'',area:'',department:'',fund:''};
+const need={id:'n',dnc_code:'ATU-DO-001-2027',competency:'Liderazgo',area:'Área A',department:'Departamento A',occupational_group:'GRUPO CON NOMBRE MUY LARGO / A',participants:3,hours:8,estimated_cost:900,planned_start_date:'2027-02-01',planned_end_date:'2027-03-31',status:'Aprobada'};
+const group=need.occupational_group;const node=(id,parent,kind,name,value)=>({id,parent,kind,name,value,mode:'amount',fund:'Institucional',group,area:kind==='group'?'':need.area,department:['department','activity'].includes(kind)?need.department:'',need_id:kind==='activity'?'n':null,costs:kind==='activity'?{meals:10000,lodging:0,travel:5000}:undefined});
+const data={funds:[{name:'Institucional',cents:100000},{name:'Broker',cents:20000},{name:'Otros',cents:0}],nodes:[node('g','Institucional','group',group,100000),node('a','g','area',need.area,100000),node('d','a','department',need.department,100000),node('t','d','activity','Liderazgo',100000)],links:[]};
+const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=';
+test('complete workbook preserves the 28-column plan and full detail, adds scoped group/fund sheets, Gantt, charts and reconciled budget distribution',async()=>{
+ const charts=[];const model=analyticsData([need,{...need,id:'shared',dnc_code:'ATU-DO-002-2027',participants:2}],[],data,[],[],scope);
+ const book=await buildCompleteReportWorkbook({period,model,data,fullColumns,applied:'Período completo',summary:'Dos DNC',chartRenderer:s=>{charts.push(s);return png;}});
+ const bytes=await book.xlsx.writeBuffer();const saved=new ExcelJS.Workbook();await saved.xlsx.load(bytes);
+ assert.equal(saved.worksheets[0].name,'Reporte');assert.equal(saved.getWorksheet('Reporte').getRow(9).values.slice(1).length,28);assert.equal(institutionalPlanKeys.length,28);
+ assert.ok(saved.getWorksheet('Detalle completo').getRow(9).values.includes('Identificador del solicitante'));
+ for(const name of ['Conciliación','Gastos sin cruce','Tipos de presupuesto','Fondo Institucional','Fondo Broker','Fondo Otros','Distribución presupuestaria','Gantt','Gráficos ejecutivos'])assert.ok(saved.getWorksheet(name),name);
+ assert.ok(saved.worksheets.every(s=>s.name.length<=31));assert.equal(new Set(saved.worksheets.map(s=>s.name.toLowerCase())).size,saved.worksheets.length);
+ const main=saved.getWorksheet('Reporte');assert.equal(main.getCell('X10').value,1000);assert.equal(main.getCell('X11').value,'Compartido; ver referencia');assert.equal(main.getCell('X13').result,1000);
+ const groupSheet=saved.worksheets.find(s=>s.name.startsWith('Grupo '));assert.equal(groupSheet.getCell('A10').value,need.dnc_code);assert.equal(groupSheet.getCell('A17').value,'Resumen por área y departamento · importes sin duplicar');
+ const gantt=saved.getWorksheet('Gantt');assert.equal(gantt.getCell('F10').numFmt,'dd/mm/yyyy');assert.equal(gantt.getCell('F10').value.toISOString(),'2027-02-01T00:00:00.000Z');assert.equal(gantt.getCell('I10').result??'','');assert.equal(gantt.getCell('J10').result,'■');assert.equal(gantt.getCell('K10').result,'■');assert.equal(gantt.getCell('L10').result??'','');
+ assert.equal(saved.getWorksheet('Gráficos ejecutivos').getImages().length,4);assert.equal(charts.length,4);assert.equal(charts[0].series[0].values.reduce((a,b)=>a+b,0),1200);
+ const dist=saved.getWorksheet('Distribución presupuestaria');for(let i=10;i<=dist.rowCount;i++)for(const c of dist.getRow(i).values)assert.ok(!c?.formula?.startsWith('SUBTOTAL'),'hierarchy levels must not be totaled together');
+});
+test('group/fund filters constrain every added sheet and empty scopes keep unknowns instead of inventing dates or assignments',async()=>{
+ const model=analyticsData([need,{...need,id:'other',occupational_group:'Otro'}],[],data,[],[],{...scope,group,fund:'Institucional'});
+ const book=await buildCompleteReportWorkbook({period,model,data,fullColumns,applied:'Grupo y fondo',summary:'Filtrado'});
+ assert.equal(book.getWorksheet('Fondo Broker'),undefined);assert.equal(book.worksheets.filter(s=>s.name.startsWith('Grupo ')).length,1);assert.equal(book.getWorksheet('Reporte').getCell('A11').value,null);
+ const empty=await buildCompleteReportWorkbook({period,model:analyticsData([],[],null,[],[],scope),data:null,fullColumns,applied:'Vacío',summary:'Sin datos'});
+ assert.match(empty.getWorksheet('Reporte').getCell('A10').value,/No existen/);assert.equal(empty.getWorksheet('Gráficos ejecutivos').getCell('A10').value,'Sin presupuesto');
+});
+test('sheet names are sanitized, shortened and de-duplicated case-insensitively',()=>{const used=new Set();const a=sheetName('Grupo / [Nombre muy largo y repetido en varias secciones]',used),b=sheetName('Grupo / [Nombre muy largo y repetido en varias secciones]',used);assert.ok(a.length<=31&&b.length<=31);assert.notEqual(a,b);assert.doesNotMatch(a,/[\\/*?:\[\]]/);});
