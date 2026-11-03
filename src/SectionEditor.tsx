@@ -20,7 +20,7 @@ export function editableFields(children:ReactNode, editing:boolean):ReactNode {
 export function hasEditableFields(children:ReactNode):boolean {
  return Children.toArray(children).some(child=>isValidElement<FieldProps>(child)&&((!!child.props.onChange&&'value' in child.props&&!child.props.disabled&&child.props.type!=='file')||hasEditableFields(child.props.children)));
 }
-const ParentEditor = createContext(false);
+export const ParentEditor = createContext(false);
 export function SectionEditor({children,title,enabled=true,initialEditing=false}:{children:ReactNode;title:string;enabled?:boolean;initialEditing?:boolean}){
  const nested=useContext(ParentEditor);
  const [editing,setEditing]=useState(initialEditing),ref=useRef<HTMLDivElement>(null),id=useId();
