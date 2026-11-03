@@ -1,3 +1,4 @@
+import {reportDate} from './reportDates';
 import ExcelJS, { type Workbook } from "exceljs";
 import type { Need } from "./needTypes";
 import { needReportColumns } from "./needPlanning";
@@ -9,7 +10,7 @@ const NAVY = "173D63", TEAL = "17617E", BORDER = "DCE5EE", INK = "243B53";
 const dateText = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}` : value;
 function excelDate(value: unknown, withTime: boolean): Date | string {
   const text = String(value ?? "");
-  const parsed = new Date(withTime ? text : `${text}T00:00:00Z`);
+  const parsed = value instanceof Date ? new Date(value.valueOf()) : new Date(withTime ? text : /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text) ? `${text.slice(0,10)}T00:00:00Z` : text);
   if (Number.isNaN(parsed.valueOf())) return text;
   if (!withTime) return parsed;
   // Excel serial dates have no timezone: store the Ecuador wall time deliberately.
@@ -37,7 +38,7 @@ export async function buildInstitutionalWorkbook(options: ReportOptions): Promis
   sheet.getCell(1, 4).value = "COOPERATIVA DE AHORRO Y CRÉDITO ATUNTAQUI LTDA.";
   sheet.getCell(2, 4).value = "Sistema de Gestión Integral de Capacitación";
   sheet.getCell(3, 4).value = options.title;
-  sheet.getCell(4, 1).value = `Período: ${options.periodName}${options.periodStart && options.periodEnd ? ` (${dateText(options.periodStart)} al ${dateText(options.periodEnd)})` : ""}. Generado: ${generated.toLocaleString("es-EC", { timeZone: "America/Guayaquil" })}. Hora de Ecuador.`;
+  sheet.getCell(4, 1).value = `Período: ${options.periodName}${options.periodStart && options.periodEnd ? ` (${dateText(options.periodStart)} al ${dateText(options.periodEnd)})` : ""}. Generado: ${reportDate(generated, true)}. Hora de Ecuador.`;
   sheet.getCell(5, 1).value = `Filtros aplicados: ${options.filters || "Todos los registros del período"}.`;
   sheet.getCell(6, 1).value = `Fuente: ${options.source}.`;
   sheet.getCell(7, 1).value = options.summary;
