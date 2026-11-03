@@ -9,7 +9,7 @@ function setup(busy=false){
  let open=false,focused=false,restored=false,closed=0,cleanup;
  const dialog={showModal(){open=true},close(){open=false},querySelector(){return{focus(){focused=true}}}};
  const doc={body:{style:{overflow:'auto'}},activeElement:{isConnected:true,focus(){restored=true}}};
- const context={module:{exports:{}},exports:{},document:doc,require(name){if(name==='react')return{useId:()=> 'modal-title',useRef:()=>({current:dialog}),useEffect(fn){cleanup=fn()}};if(name==='react-dom')return{createPortal:child=>child};return require(name)}};
+ const context={module:{exports:{}},exports:{},document:doc,require(name){if(name==='react')return{...require('react'),useId:()=> 'modal-title',useRef:()=>({current:dialog}),useEffect(fn){cleanup=fn()}};if(name==='react-dom')return{createPortal:child=>child};return require(name)}};
  vm.runInNewContext(result.outputFiles[0].text,context);
  const tree=context.module.exports.Modal({title:'Modificar necesidad',children:'Formulario',busy,onClose(){closed++}});
  return{tree,doc,cleanup,state:()=>({open,focused,restored,closed})};
@@ -20,5 +20,5 @@ test('modal opens with a named dialog, focuses the form, locks scrolling and res
  app.cleanup();assert.equal(app.state().open,false);assert.equal(app.state().restored,true);assert.equal(app.doc.body.style.overflow,'auto');
 });
 test('Escape cannot dismiss an edit while saving and otherwise goes through the guarded close callback',()=>{
- for(const busy of [true,false]) {const app=setup(busy);let prevented=false;app.tree.props.onCancel({preventDefault(){prevented=true}});assert.equal(prevented,true);assert.equal(app.state().closed,busy?0:1)}
+ for(const busy of [true,false]) {const app=setup(busy);let prevented=false;app.tree.props.onCancel({preventDefault(){prevented=true},stopPropagation(){}});assert.equal(prevented,true);assert.equal(app.state().closed,busy?0:1)}
 });

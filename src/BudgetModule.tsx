@@ -1,3 +1,4 @@
+import {FormWindow} from "./FormWindow";
 import {usePendingChanges} from "./UnsavedChanges";
 import {SectionEditor} from "./SectionEditor";
 import { applyDncBudgets, dncBudget, dncBudgetLabel } from './budgetDnc';
@@ -68,7 +69,7 @@ export function BudgetModule({state,error,period,needs,units,records,mappings,on
     setLogisticsDepartment(id);setCostActivity('');
   }
   const level=owner?.kind==='department'?'Temas':owner?.kind==='area'?'Departamentos':owner?.kind==='group'?'Áreas':'Grupos ocupacionales';
-  return <div className="budget-module">
+  return <FormWindow title="Gestionar presupuestos" busy={busy} disabled={readOnly}><div className="budget-module">
     <div className="panelhead"><div><h2>Presupuestos · {period.name}</h2><p>1. Distribuya capacitación por grupo, área, departamento y tema. 2. Genere el presupuesto adicional de logística.</p></div><button className="secondary" disabled={busy||dirty||!state} onClick={()=>{setBusy(true);void exportBudget(draft,records,mappings,period,needs).catch(()=>setMessage('No se pudo exportar.')).finally(()=>setBusy(false));}}>Exportar a Excel</button></div>
     {readOnly&&<p role="status" className="alert">Período cerrado: solo consulta. Puede navegar y exportar los valores guardados.</p>}
     {error&&<div role="alert" className="error">{error}</div>}
@@ -93,5 +94,5 @@ export function BudgetModule({state,error,period,needs,units,records,mappings,on
     </SectionEditor></section>
     <section className="panel"><SectionEditor title="presupuestos" enabled={!readOnly}><h2>Vincular ejecución</h2><p>Los cruces únicos son automáticos; seleccione una actividad para recategorizar un gasto. Los gastos sin cruce permanecen identificados.</p><input aria-label="Buscar gasto" placeholder="Buscar tema o área" value={search} onChange={e=>setSearch(e.target.value)}/><CollapsibleTable><table><thead><tr><th>Área / tema</th><th>Costo</th><th>Actividad</th></tr></thead><tbody>{records.filter(r=>`${r.requesting_area} ${r.topic}`.toLowerCase().includes(search.toLowerCase())).map(r=><tr key={r.id}><td>{r.requesting_area} · {r.topic}</td><td>{usd(Math.round(Number(r.cost)*100))}</td><td><select disabled={readOnly} aria-label={`Vincular ${r.id}`} value={draft.links.find(l=>l.record_id===r.id)?.node_id||''} onChange={e=>update({...draft,links:[...draft.links.filter(l=>l.record_id!==r.id),...(e.target.value?[{record_id:r.id,node_id:e.target.value}]:[])]},true)}><option value="">Automático · {execution.resolved.has(r.id)?'Vinculado':'Pendiente'}</option>{draft.nodes.filter(n=>n.kind==='activity'&&!!matchingDncTopic(n,needs)).map(n=><option key={n.id} value={n.id}>{n.fund} · {n.group} · {n.department} · {n.name}</option>)}</select></td></tr>)}</tbody></table></CollapsibleTable><small>La tabla permite filtrar, ordenar y recorrer todas las coincidencias. Los cálculos y reportes incluyen todos los registros.</small></SectionEditor></section>
     </fieldset></SectionEditor><BudgetFinancialSummary data={draft} records={records} mappings={mappings} periodName={`${period.name}${dirty?' · Vista previa':''}`}/>
-  </div>;
+  </div></FormWindow>;
 }

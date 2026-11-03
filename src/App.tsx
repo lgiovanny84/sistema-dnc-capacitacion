@@ -1,3 +1,4 @@
+import {FormWindow} from "./FormWindow";
 import {SectionEditor} from "./SectionEditor";
 import {requestLeave,usePendingChanges} from "./UnsavedChanges";
 import { OrganizationManager } from "./OrganizationManager";
@@ -346,7 +347,7 @@ export default function App() {
             adminOverview={role === "admin" ? <AdminOverview needs={periodNeeds} groups={[...orgUnits.map(unit => unit.group_name), ...competencyMatrix.filter(row => row.active).map(row => row.group_name)]} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={session.user.id} period={activePeriod} reload={load} /> : null}
           />
         ) : tab === "new" ? (
-          activePeriod ? <NeedForm key={activePeriod.id}
+          activePeriod ? <Modal title="Nueva necesidad de capacitación" onClose={() => requestLeave(() => setTab("list"))}><NeedForm key={activePeriod.id}
             catalogs={catalogs}
             competencyMatrix={competencyMatrix}
             orgUnits={orgUnits}
@@ -358,7 +359,7 @@ export default function App() {
             userId={session.user.id}
             periodId={activePeriod?.id ?? ""}
             period={activePeriod}
-          /> : <div className="alert">No existe un período activo disponible para registrar necesidades de capacitación.</div>
+          /></Modal> : <div className="alert">No existe un período activo disponible para registrar necesidades de capacitación.</div>
         ) : tab === "list" ? (
           <List
             needs={visible}
@@ -1213,7 +1214,7 @@ function Admin({
     if (!error) await loadUsers();
   }
   return (
-    <SectionEditor title="catálogos" enabled={section==='catalogs'}>
+    <>
       <div className="admin-workspace">
         <div className="admin-workspace-head">
           <div><span className="eyebrow">CONFIGURACIÓN Y CONTROL</span><h2>Administración</h2><p>Gestione una sección a la vez. Los controles de configuración son exclusivos del administrador.</p></div>
@@ -1229,12 +1230,14 @@ function Admin({
         </nav>
       </div>
       {msg && <div className="statusmsg" role="status">{msg}</div>}
-      {section === "periods" && <PeriodManager periods={periods} reload={reload} />}
-      {section === "matrix" && <CompetencyMatrixManager rows={competencyMatrix} reload={reload} onPendingChange={setMatrixPending} />}
-      {section === "requests" && (period?.closed||period?.active===false?<p className="alert">Período cerrado: las solicitudes se consultan desde Necesidades.</p>:<CorrectionRequests needs={needs} users={users} />)}
-      {section === "needs" && (period?.closed||period?.active===false?<MiniTable needs={needs}/>:<AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} />)}
-      {section === "users" && editingUser && (
-        <AdminUserEditor
+      {section === "periods" && <FormWindow title="Gestionar períodos"><PeriodManager periods={periods} reload={reload} /></FormWindow>}
+      {section === "matrix" && <FormWindow title="Gestionar competencias"><CompetencyMatrixManager rows={competencyMatrix} reload={reload} onPendingChange={setMatrixPending} /></FormWindow>}
+      {section === "requests" && (period?.closed||period?.active===false?<p className="alert">Período cerrado: las solicitudes se consultan desde Necesidades.</p>:<FormWindow title="Gestionar solicitudes"><CorrectionRequests needs={needs} users={users} /></FormWindow>)}
+      {section === "needs" && (period?.closed||period?.active===false?<MiniTable needs={needs}/>:<FormWindow title="Gestionar necesidades"><AdminNeeds needs={needs} competencyMatrix={competencyMatrix} period={period} reload={reload} /></FormWindow>)}
+      {section === "users" && <FormWindow title="Gestionar usuarios y accesos" busy={sending || savingUsers || Boolean(resettingUserId)}>
+      {msg && <div className="statusmsg" role="status">{msg}</div>}
+      {editingUser && (
+        <Modal title="Modificar usuario" onClose={() => requestLeave(() => setEditingUser(null))}><AdminUserEditor
           key={editingUser.id}
           user={editingUser}
           catalogs={catalogs}
@@ -1244,9 +1247,9 @@ function Admin({
             await loadUsers();
             setEditingUser(null);
           }}
-        />
+        /></Modal>
       )}
-      {section === "users" && <CompactSection title="Usuarios y accesos" summary={`${users.length} usuarios · ${Object.keys(userDrafts).length} cambios pendientes`}><div className="panel">
+      <CompactSection title="Usuarios y accesos" summary={`${users.length} usuarios · ${Object.keys(userDrafts).length} cambios pendientes`}><div className="panel">
         <div className="panelhead"><div><h2>Usuarios y accesos</h2><p>Active, inactive o restaure accesos y guarde todos los cambios. La restauración conserva el perfil y su histórico. Genere una clave temporal para recuperar el ingreso.</p></div><button className="primary" disabled={!Object.keys(userDrafts).length || savingUsers || Boolean(resettingUserId)} onClick={() => void saveUserChanges()}>{savingUsers ? "Guardando…" : `Guardar todos los cambios (${Object.keys(userDrafts).length})`}</button></div>
         <form ref={setNewUserForm} className="userform" onSubmit={invite}>
           <Input
@@ -1366,8 +1369,8 @@ function Admin({
             </tbody>
           </table>
         </CollapsibleTable>
-      </div></CompactSection>}
-      {section === "catalogs" && <CompactSection title="Catálogos configurables"><div className="panel">
+      </div></CompactSection></FormWindow>}
+      {section === "catalogs" && <FormWindow title="Gestionar catálogos" busy={savingCatalogs}>{msg && <div className="statusmsg" role="status">{msg}</div>}<CompactSection title="Catálogos configurables"><div className="panel">
         <h2>Catálogos configurables</h2>
         <p>
           Los cambios afectan las opciones de nuevos registros y quedan
@@ -1383,8 +1386,8 @@ function Admin({
           />
           <button className="primary">Agregar</button>
         </form>
-      </div></CompactSection>}
-      {section === "catalogs" && <CompactSection title="Elementos configurados"><div className="panel catalog">
+      </div></CompactSection>
+      <CompactSection title="Elementos configurados"><div className="panel catalog">
         <div className="panelhead"><div><h2>Elementos configurados</h2><p>Edite nombres o estados y guarde la sección completa.</p></div><button className="primary" disabled={!Object.keys(catalogDrafts).length || savingCatalogs} onClick={() => void saveCatalogChanges()}>{savingCatalogs ? "Guardando…" : `Guardar todos los cambios (${Object.keys(catalogDrafts).length})`}</button></div>
         <div className="catalog-category-menu" aria-label="Tipos de catálogo">{Object.entries(kinds).map(([key, label]) => <button className={kind === key ? "active" : ""} onClick={() => { setKind(key); setCatalogSearch(""); }} key={key}>{label}<span>{catalogs.filter(c => c.kind === key).length}</span></button>)}</div>
         <label className="catalog-search">Buscar en {kinds[kind].toLowerCase()}<input value={catalogSearch} onChange={event => setCatalogSearch(event.target.value)} placeholder="Escriba un nombre" /></label>
@@ -1406,9 +1409,9 @@ function Admin({
             </div>
           </div>
         ))}
-      </div></CompactSection>}
-      {section === "structure" && <OrganizationManager reload={reload} onPendingChange={setStructurePending}/>}
-    </SectionEditor>
+      </div></CompactSection></FormWindow>}
+      {section === "structure" && <FormWindow title="Gestionar estructura organizacional"><OrganizationManager reload={reload} onPendingChange={setStructurePending}/></FormWindow>}
+    </>
   );
 }
 
