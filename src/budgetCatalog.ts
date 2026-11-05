@@ -1,3 +1,4 @@
+import { dncUnits } from './dncScope';
 import { dncBudget } from './budgetDnc';
 import type { Need, OrgUnit } from './needTypes';
 import type { BudgetData, BudgetNode, FundType } from './budgetModel';
@@ -5,7 +6,7 @@ import type { BudgetData, BudgetNode, FundType } from './budgetModel';
 export function catalogChildren(data:BudgetData,parent:string,fund:FundType,units:OrgUnit[],needs:Need[],uuid:()=>string=()=>crypto.randomUUID()) {
   const owner=data.nodes.find(n=>n.id===parent);
   const kind=owner?.kind==='group'?'area':owner?.kind==='area'?'department':owner?.kind==='department'?'activity':'group';
-  const scope=units.filter(u=>u.active&&(!owner||u.group_name===owner.group)&&(kind!=='department'||u.area_name===owner?.name));
+  const scope=dncUnits(units,needs).filter(u=>(!owner||u.group_name===owner.group)&&(kind!=='department'||u.area_name===owner?.name));
   const eligibleNeeds=needs.filter(n=>n.occupational_group===owner?.group&&n.area===owner?.area&&n.department===owner?.name);
   const names=kind==='group'?scope.map(u=>u.group_name):kind==='area'?scope.map(u=>u.area_name):kind==='department'?scope.map(u=>u.department_name):eligibleNeeds.map(n=>n.competency);
   const existing=data.nodes.filter(n=>n.parent===parent);

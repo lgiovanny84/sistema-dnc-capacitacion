@@ -1,3 +1,4 @@
+import { nodeHasDnc } from './dncScope';
 import {requestLeave} from "./UnsavedChanges";
 import { useBudget } from "./BudgetModule";
 import { calculateBudget } from "./budgetModel";
@@ -12,10 +13,11 @@ import { buildInstitutionalWorkbook, buildNeedsWorkbook, downloadInstitutionalWo
 import { budgetByOccupationalGroup, missingNeedFields, normalizeGroup, reviewFields } from "./needReview";
 const currency = (value: number) => value.toLocaleString("es-EC", { style: "currency", currency: "USD" });
 export function GroupBudgetCards({ needs, groups, periodName }: { needs: Need[]; groups: string[]; periodName: string }) {
+  groups = groups.filter(group => needs.some(n => normalizeGroup(n.occupational_group) === normalizeGroup(group)));
   const budget = useBudget();
   const assigned = budget ? calculateBudget(budget.payload).amounts : new Map<string,number>();
-  const directGroups = budget?.payload.nodes.filter(n=>n.kind==='group') || [];
-  const sourceNeeds = budget ? budget.payload.nodes.filter(n=>n.kind==='activity').map(n=>({...needs.find(v=>v.id===n.need_id), id:n.id, occupational_group:needs.find(v=>v.id===n.need_id)?.occupational_group || n.group, estimated_cost:(assigned.get(n.id)||0)/100})) as Need[] : needs;
+  const directGroups = budget?.payload.nodes.filter(n=>n.kind==='group'&&nodeHasDnc(n,needs)) || [];
+  const sourceNeeds = budget ? budget.payload.nodes.filter(n=>n.kind==='activity'&&nodeHasDnc(n,needs)).map(n=>({...needs.find(v=>v.id===n.need_id), id:n.id, occupational_group:needs.find(v=>v.id===n.need_id)?.occupational_group || n.group, estimated_cost:(assigned.get(n.id)||0)/100})) as Need[] : needs;
   const sourceLabel = budget ? "Asignaciones directas por grupo ocupacional en Presupuestos, consolidadas entre fondos. Capacitación y logística adicional se muestran por separado." : "Costos estimados registrados en las necesidades del Módulo 1 (sin presupuesto independiente configurado).";
   const totals = directGroups.length ? budgetByOccupationalGroup(directGroups.map(n=>({id:n.id,occupational_group:n.group,estimated_cost:(assigned.get(n.id)||0)/100})) as Need[],groups).map(g=>({...g,activities:sourceNeeds.filter(n=>normalizeGroup(n.occupational_group)===normalizeGroup(g.name)).length})) : budgetByOccupationalGroup(sourceNeeds, groups);
   const [exporting, setExporting] = useState(false), [error, setError] = useState("");

@@ -47,3 +47,17 @@ test('shared DNC reports inherit the actual fund without duplicating amounts; tr
  const combined=makeReport('complete',analyticsData(needs,[],broker,[],units,scope),broker);assert.equal(combined[1].fund,'Institucional · Broker');
  const filtered=makeReport('complete',analyticsData(needs,[],data,[],units,{...scope,fund:'Broker'}),data);assert.equal(filtered.length,0);
 });
+
+test('reports omit units without DNC and retain their spending separately for reconciliation',()=>{
+ const extra={...records[0],id:'outside',requesting_area:'Otro',department:'Otro',area:'Otra área',occupational_group:'Consejo',cost:73};
+ const m=analyticsData([need],[...records,extra],data,mappings,units,scope);
+ assert.equal(m.classified.length,records.length);
+ assert.equal(m.outsideDnc.length,1);assert.equal(m.outsideDnc[0].record.cost,73);
+ for(const kind of ['received','hours','execution','distribution'])assert.doesNotMatch(JSON.stringify(makeReport(kind,m,data)),/Otra área|Consejo/);
+ const empty=analyticsData([],records,data,mappings,units,scope);assert.equal(empty.nodes.length,0);assert.equal(empty.classified.length,0);assert.equal(empty.outsideDnc.length,records.length);
+});
+test('execution management keeps cancelled records available within DNC scope',()=>{
+ const cancelled={...records[0],id:'cancelled',status:'Cancelada'};
+ assert.equal(analyticsData([need],[cancelled],data,mappings,units,scope).classified.length,0);
+ assert.equal(analyticsData([need],[cancelled],data,mappings,units,scope,true).classified.length,1);
+});

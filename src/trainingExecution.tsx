@@ -1,3 +1,5 @@
+import type { Need, OrgUnit } from './needTypes';
+import { analyticsData } from './reportAnalytics';
 import {reportDate} from './reportDates';
 import {FormWindow} from "./FormWindow";
 import {Modal} from "./Modal";
@@ -279,30 +281,37 @@ export function TrainingExecutionModule({
   batches,
   period,
   departments,
+  units,
   reload,
 }: {
   records: TrainingRecord[];
   budgets: BudgetAllocation[];
-  plans: TrainingPlan[];
+  plans: Need[];
   batches: ImportBatch[];
   period: { id: string; name: string; start_date: string; end_date: string; closed?:boolean; active?:boolean };
   departments: string[];
+  units: OrgUnit[];
   reload: () => Promise<void>;
 }) {
   const [section, setSection] = useState<"dashboard" | "import" | "budget" | "report">("dashboard");
+  const financial = useBudget();
+  const model = analyticsData(plans, records, financial?.payload || null, budgets, units, {group:"",area:"",department:"",fund:""},true);
+  const visibleRecords = model.classified.map(v=>({...v.record,area:v.area,department:v.department,occupational_group:v.group}));
   return (
-    <>
-      <div className="panel module-tabs">
-        <div><h2>Capacitación ejecutada</h2><p>Base histórica, presupuesto, banco de horas y análisis estratégico.</p></div>
+    <div className="execution-workspace">
+      <div className="panel module-tabs execution-navigation">
+        <div><span className="execution-eyebrow">CONTROL DE CAPACITACIÓN</span><h2>Ejecución y resultados</h2><p>{period.name} · {plans.length} necesidades DNC · {visibleRecords.length} registros</p></div>
         <div className="actions">
-          {(["dashboard", "import", "budget", "report"] as const).map((id) => <button key={id} className={section === id ? "primary" : "secondary"} onClick={() => {if(id!==section)requestLeave(()=>setSection(id));}}>{id === "dashboard" ? "Dashboard" : id === "import" ? "Cargar Excel" : id === "budget" ? "Presupuesto y horas" : "Reportes"}</button>)}
+          {(["dashboard", "import", "budget", "report"] as const).map((id) => <button key={id} className={section === id ? "primary" : "secondary"} aria-pressed={section === id} aria-controls="execution-content" onClick={() => {if(id!==section)requestLeave(()=>setSection(id));}}>{id === "dashboard" ? "Dashboard" : id === "import" ? "Cargar Excel" : id === "budget" ? "Presupuesto y horas" : "Reportes"}</button>)}
         </div>
       </div>
-      {section === "dashboard" && <ExecutionDashboard records={records} budgets={budgets} plans={plans} periodName={period.name} />}
+      <div id="execution-content" className="execution-content">
+      {model.outsideDnc.length>0&&<p className="execution-scope-note" role="status">{model.outsideDnc.length} registros fuera del alcance DNC · {money(model.outsideDnc.reduce((s,r)=>s+Number(r.record.cost),0))}. Conservados en la base original.</p>}
+      {section === "dashboard" && <ExecutionDashboard records={visibleRecords} budgets={budgets} plans={plans} periodName={period.name} />}
       {section === "import" && (period.closed||period.active===false?<p className="alert">Período cerrado: no se permite cargar, eliminar ni resetear bases.</p>:<FormWindow title="Cargar capacitaciones recibidas"><ExcelImporter records={records} batches={batches} period={period} reload={reload} /></FormWindow>)}
       {section === "budget" && (period.closed||period.active===false?<BudgetSummary records={records} budgets={budgets} plans={plans} periodName={period.name}/>:<FormWindow title="Gestionar presupuesto y horas"><BudgetManager records={records} budgets={budgets} plans={plans} departments={departments} period={period} reload={reload} /></FormWindow>)}
-      {section === "report" && <ExecutionReport records={records} batches={batches} period={period} reload={reload} />}
-    </>
+      {section === "report" && <ExecutionReport records={visibleRecords} batches={batches} period={period} reload={reload} />}
+    </div></div>
   );
 }
 
@@ -487,7 +496,7 @@ function BudgetManager({ records, budgets, plans, departments, period, reload }:
   }
   const configured = budgets.filter((budget) => !budget.period_id || budget.period_id === period.id);
   const plannedDepartments = [...new Set(plans.map((plan) => plan.department).filter(Boolean))];
-  const departmentOptions = [...new Set([...departments, ...plannedDepartments])].sort((a, b) => a.localeCompare(b, "es"));
+  const departmentOptions = [...new Set(departments.filter(d=>plannedDepartments.includes(d)))].sort((a, b) => a.localeCompare(b, "es"));
   const requestingAreas = [...new Set(records.map((record) => record.requesting_area).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   return <SectionEditor title="presupuesto y horas">
     <CompactSection title="Reglas de cruce ·"><div className="panel"><div className="panelhead"><div><h2>Reglas de cruce · {period.name}</h2><p>Los valores y horas presupuestadas se toman automáticamente del Módulo 1. Configure solo las excepciones de denominación.</p></div></div>
@@ -506,10 +515,10 @@ function ExecutionDashboard({ records, budgets, plans, periodName }: { records: 
   const cost = completed.reduce((s, r) => s + Number(r.cost), 0);
   const hours = completed.reduce((s, r) => s + Number(r.duration), 0);
   return <>
-    <div className="dashboard-toolbar"><b>Período analizado: {periodName}</b></div>
+    <div className="dashboard-toolbar execution-section-heading"><div><span className="execution-eyebrow">RESULTADOS DEL PERÍODO</span><h3>Indicadores de ejecución</h3></div><span>{periodName}</span></div>
     <CompactSection title="Indicadores del período"><section className="cards strategic-cards"><Metric label="Participantes capacitados" value={participants.toLocaleString("es-EC")} /><Metric label="Eventos ejecutados" value={events.toLocaleString("es-EC")} /><Metric label="Inversión ejecutada" value={money(cost)} /><Metric label="Horas cumplidas" value={hours.toLocaleString("es-EC")} /><Metric label="Costo por participante" value={money(participants ? cost / participants : 0)} /><Metric label="Cobertura departamental" value={new Set(completed.map((r) => norm(r.requesting_area)).filter(Boolean)).size.toLocaleString("es-EC")} /></section></CompactSection>
     <BudgetSummary records={records} budgets={budgets} plans={plans} periodName={periodName} />
-    <section className="grid2"><Distribution title="Estado" records={annual} field="status" /><Distribution title="Modalidad" records={annual} field="modality" /><Distribution title="Área de conocimiento" records={annual} field="knowledge_area" /><Distribution title="Área requiriente" records={annual} field="requesting_area" /></section>
+    <section className="grid2 execution-distributions" aria-label="Distribución de capacitaciones"><Distribution title="Estado" records={annual} field="status" /><Distribution title="Modalidad" records={annual} field="modality" /><Distribution title="Área de conocimiento" records={annual} field="knowledge_area" /><Distribution title="Área requiriente" records={annual} field="requesting_area" /></section>
   </>;
 }
 
