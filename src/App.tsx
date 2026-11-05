@@ -344,7 +344,7 @@ export default function App() {
             trainingRecords={periodRecords}
             budgetAllocations={periodBudgets}
             periodName={activePeriod?.name ?? "Sin período"}
-            adminOverview={role === "admin" ? <AdminOverview needs={periodNeeds} groups={[...orgUnits.map(unit => unit.group_name), ...competencyMatrix.filter(row => row.active).map(row => row.group_name)]} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={session.user.id} period={activePeriod} reload={load} /> : null}
+            adminOverview={role === "admin" ? <AdminOverview needs={periodNeeds} groups={unique(periodNeeds.map(need => need.occupational_group))} catalogs={catalogs} competencyMatrix={competencyMatrix} orgUnits={orgUnits} profile={profile} userId={session.user.id} period={activePeriod} reload={load} /> : null}
           />
         ) : tab === "new" ? (
           activePeriod ? <Modal title="Nueva necesidad de capacitación" onClose={() => requestLeave(() => setTab("list"))}><NeedForm key={activePeriod.id}
@@ -383,7 +383,8 @@ export default function App() {
               plans={periodNeeds}
               batches={periodBatches}
               period={activePeriod}
-              departments={unique(orgUnits.map((unit) => unit.department_name))}
+              departments={unique(periodNeeds.map(need => need.department))}
+              units={orgUnits}
               reload={load}
             /> : <div className="alert">Debe crear un período institucional en Administración antes de cargar registros.</div>
         ) : tab === "budgets" && role === "admin" ? (

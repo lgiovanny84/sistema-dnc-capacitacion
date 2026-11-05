@@ -1,3 +1,4 @@
+import { hasDnc, nodeHasDnc } from './dncScope';
 import { needReportColumns, needReportValue } from './needPlanning';
 import type { Need, OrgUnit } from './needTypes';
 import type { BudgetData } from './budgetModel';
@@ -10,18 +11,20 @@ export const reportTypes={complete:'DNC completo y ejecución presupuestaria',to
 export type ReportKind=keyof typeof reportTypes;
 export const scopeMatches=(s:ReportScope,v:{area?:string;department?:string;group?:string;fund?:string})=>(['area','department','group','fund'] as const).every(k=>!s[k]||budgetNorm(s[k])===budgetNorm(v[k]||''));
 export const isExecuted=(r:TrainingRecord)=>!['CANCELADO','CANCELADA','ANULADO','ANULADA','RECHAZADO','RECHAZADA'].includes(budgetNorm(r.status));
-export function analyticsData(needs:Need[],records:TrainingRecord[],data:BudgetData|null,mappings:BudgetAllocation[],units:OrgUnit[],scope:ReportScope){
+export function analyticsData(needs:Need[],records:TrainingRecord[],data:BudgetData|null,mappings:BudgetAllocation[],units:OrgUnit[],scope:ReportScope,includeAllRecords=false){
  const calculation=data?calculateBudget(data):null;
  const amounts=calculation?.amounts||new Map<string,number>(),remaining=calculation?.remaining||new Map<string,number>();
  const execution=data?budgetExecution(data,records,mappings):null;
  const activities=data?.nodes.filter(n=>n.kind==='activity')||[];
- const classified=records.filter(isExecuted).map(r=>{
+ const classifiedAll=records.filter(r=>includeAllRecords||isExecuted(r)).map(r=>{
   const match=activities.find(n=>n.id===execution?.resolved.get(r.id));
   const departments=units.filter(u=>u.active&&budgetNorm(mappings.find(m=>budgetNorm(m.department_name)===budgetNorm(u.department_name))?.requesting_area_name||u.department_name)===budgetNorm(r.requesting_area));
   const areas=[...new Set(departments.map(u=>u.area_name))],deps=[...new Set(departments.map(u=>u.department_name))];
-  return {record:r,area:match?.area||(areas.length===1?areas[0]:r.area)||'Sin área identificada',department:match?.department||(deps.length===1?deps[0]:r.department)||r.requesting_area,group:match?.group||r.occupational_group,fund:match?.fund||'',linked:!!match};
+  return {record:r,area:match?.area||(areas.length===1?areas[0]:r.area)||'Sin área identificada',department:match?.department||(deps.length===1?deps[0]:r.department)||r.requesting_area,group:match?.group||([...new Set(departments.map(u=>u.group_name))].length===1?departments[0].group_name:r.occupational_group),fund:match?.fund||'',linked:!!match};
  }).filter(r=>scopeMatches(scope,r));
- const nodes=(data?.nodes||[]).filter(n=>scopeMatches(scope,n));
+ const classified=classifiedAll.filter(r=>hasDnc(needs,r));
+ const outsideDnc=classifiedAll.filter(r=>!hasDnc(needs,r));
+ const nodes=(data?.nodes||[]).filter(n=>scopeMatches(scope,n)&&nodeHasDnc(n,needs));
  const selected=needs.filter(n=>scopeMatches({...scope,fund:''},{area:n.area,department:n.department,group:n.occupational_group})&&(!scope.fund||activities.some(a=>a.fund===scope.fund&&a.area===n.area&&a.department===n.department&&a.group===n.occupational_group&&a.name===n.competency)));
  const areas=new Map<string,{area:string;planned:number;spent:number;unknown:number}>();
  const get=(area:string)=>{if(!areas.has(area))areas.set(area,{area,planned:0,spent:0,unknown:0});return areas.get(area)!;};
@@ -35,7 +38,7 @@ export function analyticsData(needs:Need[],records:TrainingRecord[],data:BudgetD
  const distributionLevel=scope.department?'department':scope.area?'area':scope.group?'group':null;
  const distributionAssigned=data?(distributionLevel?nodes.filter(n=>n.kind===distributionLevel).reduce((s,n)=>s+(amounts.get(n.id)||0),0):data.funds.filter(f=>!scope.fund||f.name===scope.fund).reduce((s,f)=>s+f.cents,0)):null;
  const distributionPending=data?(distributionLevel?nodes.filter(n=>n.kind===distributionLevel).reduce((s,n)=>s+(remaining.get(n.id)||0),0):data.funds.filter(f=>!scope.fund||f.name===scope.fund).reduce((s,f)=>s+(remaining.get(f.name)||0),0)):null;
- return {scope,amounts,remaining,distributionAssigned,distributionPending,activities,nodes,selected,classified,areaRows,unmatched:classified.filter(v=>!v.linked),execution};
+ return {scope,amounts,remaining,distributionAssigned,distributionPending,activities,nodes,selected,classified,outsideDnc,areaRows,unmatched:classified.filter(v=>!v.linked),execution};
 }
 const requesterLabel=(n:Need)=>`${n.requester?.username?.trim().toUpperCase()||"USUARIO NO DISPONIBLE"}-${n.department?.trim().toUpperCase()||"SIN DEPARTAMENTO"}`;
 export function makeReport(kind:ReportKind,model:ReturnType<typeof analyticsData>,data:BudgetData|null){
@@ -91,6 +94,7 @@ export function reportReconciliation(model:ReturnType<typeof analyticsData>,data
   {concept:'Utilizado vinculado a DNC',value:directUsed==null?null:directUsed/100,unit:'USD'},
   {concept:'Saldo de DNC vinculadas',value:directAssigned==null||directUsed==null?null:(directAssigned-directUsed)/100,unit:'USD'},
   {concept:'Pendiente de distribuir hasta temas',value:model.distributionAssigned==null||allocated==null?null:(model.distributionAssigned-allocated)/100,unit:'USD'},
+  {concept:'Gasto fuera de unidades con DNC (no incluido en esta vista)',value:model.outsideDnc.reduce((s,r)=>s+Math.round(Number(r.record.cost)*100),0)/100,unit:'USD'},
   {concept:'Gasto ejecutado sin vincular a actividad/fondo',value:model.unmatched.reduce((s,r)=>s+Math.round(Number(r.record.cost)*100),0)/100,unit:'USD'},
   {concept:'Horas-persona planificadas DNC',value:model.selected.some(n=>n.hours==null)?null:model.selected.reduce((s,n)=>s+Number(n.hours)*Number(n.participants),0),unit:'Horas-persona'},
   {concept:'Horas-persona ejecutadas del alcance',value:model.classified.reduce((s,r)=>s+Number(r.record.duration),0),unit:'Horas-persona'}

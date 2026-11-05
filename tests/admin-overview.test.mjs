@@ -32,7 +32,7 @@ test('unknown budgets, partial totals, genuine zero and configured groups withou
  const data=budgetByOccupationalGroup([{...complete,estimated_cost:null},{...complete,id:'zero',occupational_group:'DIRECTIVOS',estimated_cost:0}],['COLABORADORES','DIRECTIVOS','ASAMBLEA']);
  assert.equal(data.find(row=>row.name==='COLABORADORES').known,0);assert.equal(data.find(row=>row.name==='DIRECTIVOS').known,1);assert.equal(data.find(row=>row.name==='ASAMBLEA').activities,0);
  const html=renderToStaticMarkup(React.createElement(GroupBudgetCards,{needs:[complete,{...complete,id:'unknown',estimated_cost:null}],groups:['ASAMBLEA'],periodName:'2027'}));
- assert.match(html,/Monto parcial/);assert.match(html,/1 por presupuestar/);assert.match(html,/Sin asignación registrada/);assert.match(html,/800/);
+ assert.match(html,/Monto parcial/);assert.match(html,/1 por presupuestar/);assert.doesNotMatch(html,/Sin asignación registrada/);assert.match(html,/800/);
 });
 test('completeness identifies specific missing sections without flagging zero costs or legacy planned dates',()=>{
  assert.equal(missingNeedFields(complete).length,0);
